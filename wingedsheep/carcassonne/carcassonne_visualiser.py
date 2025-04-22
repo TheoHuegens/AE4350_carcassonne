@@ -16,9 +16,9 @@ class CarcassonneVisualiser:
         MeepleType.NORMAL: ["blue_meeple.png", "red_meeple.png", "black_meeple.png", "yellow_meeple.png", "green_meeple.png", "pink_meeple.png"],
         MeepleType.ABBOT: ["blue_abbot.png", "red_abbot.png", "black_abbot.png", "yellow_abbot.png", "green_abbot.png", "pink_abbot.png"]
     }
-    tile_size = 60
-    meeple_size = 15
-    big_meeple_size = 25
+    tile_size = 30#60
+    meeple_size = 15#15
+    big_meeple_size = 15#25
 
     meeple_position_offsets = {
         Side.TOP: (tile_size / 2, (meeple_size / 2) + 3),
@@ -46,7 +46,7 @@ class CarcassonneVisualiser:
 
     def __init__(self):
         root = Tk()
-        self.canvas = Canvas(root, width=2300, height=1300, bg='white')
+        self.canvas = Canvas(root, width=700, height=700, bg='white')
         self.canvas.pack(fill='both', expand=True)
         self.images_path = os.path.join(wingedsheep.__path__[0], 'carcassonne', 'resources', 'images')
         self.meeple_image_refs = {}
