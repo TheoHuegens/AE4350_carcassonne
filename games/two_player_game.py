@@ -40,7 +40,7 @@ def print_state(carcassonne_game_state: CarcassonneGameState):
 
     print(print_object)
 
-board_size = 15
+board_size = 20
 game = CarcassonneGame(
     players=2,
     tile_sets=[TileSet.BASE],
@@ -64,12 +64,9 @@ while not game.is_finished():
     if action is not None:
         game.step(player, action)
     game.render()
-    
+
     # translate game state to array
     board_array = build_board_array(game,action)
 
-
 print_state(carcassonne_game_state=game.state)
-
-plt.imshow(board_array[1])
-plt.show()
+plot_carcassonne_board(board_array)

@@ -1,7 +1,7 @@
 import random
 import numpy as np
 from typing import Optional
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 from wingedsheep.carcassonne.carcassonne_game import CarcassonneGame
 from wingedsheep.carcassonne.carcassonne_game_state import CarcassonneGameState, GamePhase
@@ -20,7 +20,7 @@ def build_board_array(game,action):
         'empty':            [[0,0,0],[0,0,0],[0,0,0]],
         'center':           [[0,0,0],[0,1,0],[0,0,0]],
         'bottom':           [[0,0,0],[0,0,0],[0,1,0]],
-        'right':            [[0,0,0],[0,0,0],[0,0,1]],
+        'right':            [[0,0,0],[0,0,1],[0,0,0]],
         'top':              [[0,1,0],[0,0,0],[0,0,0]],
         'left':             [[0,0,0],[1,0,0],[0,0,0]],
         'bottomcenter':     [[0,0,0],[0,1,0],[0,1,0]],
@@ -34,26 +34,31 @@ def build_board_array(game,action):
         'topcenter':        [[0,1,0],[0,1,0],[0,0,0]],
         'topright':         [[0,1,1],[0,0,1],[0,0,0]],
         'topleft':          [[1,1,0],[1,0,0],[0,0,0]],
-        'topbottom':        [[0,1,0],[0,1,0],[0,0,0]],
+        'topbottom':        [[0,1,0],[0,1,0],[0,1,0]],
         'leftcenter':       [[0,0,0],[1,1,0],[0,0,0]],
         'leftright':        [[0,0,0],[1,1,1],[0,0,0]],
-        'lefttop':          [[0,1,0],[0,1,0],[0,1,0]],
-        'leftbottom':       [[0,0,0],[1,0,0],[1,1,0]]
+        'lefttop':          [[1,1,0],[1,0,0],[0,0,0]],
+        'leftbottom':       [[0,0,0],[1,0,0],[1,1,0]],
+        'not_bottom':       [[1,1,1],[1,1,1],[1,0,1]],
+        'not_right':        [[1,1,1],[1,1,0],[1,1,1]],
+        'not_top':          [[1,0,1],[1,1,1],[1,1,1]],
+        'not_left':         [[1,1,1],[0,1,1],[1,1,1]],
+        'full':             [[1,1,1],[1,1,1],[1,1,1]]
     }
     
     board_size = np.array(game.state.board).shape[0]
     board_array = np.zeros((10,3*board_size,3*board_size))
+    board_array[:] = np.nan
     for x in range(board_size):
         for y in range(board_size):
-            
             tile = game.state.board[x][y]
             if tile is not None:
-                tile_array = build_tile_array(tile,connection_region_dict)
+                tile_array = build_tile_array(tile,game,x,y,connection_region_dict)
                 board_array[0:4,3*x:3*x+3,3*y:3*y+3] = tile_array
                 
     return board_array
 
-def build_tile_array(tile,connection_region_dict):
+def build_tile_array(tile,game,x,y,connection_region_dict):
     
     tile_array = np.zeros((1,3,3)) # 3x3 subgrid for each tile property
 
@@ -68,17 +73,43 @@ def build_tile_array(tile,connection_region_dict):
     tile_layer = np.zeros((3,3))
     for i in range(len(tile.city)):
         castle = tile.city[i]
+        # add each casle part (up to 4 separate domains per tile)
+        connection = ''
         for j in range(len(castle)):
-            connection = castle[j].value
+            connection += castle[j].value
+        if len(castle) < 3: # castle has one or two sides
             tile_layer += connection_region_dict[connection]
+        elif len(castle) == 4: # castle is full
+            tile_layer += connection_region_dict['full']
+        else:# castle is all except one side
+            # get opposite of leftbottomtop = right
+            sides = list(tile.get_city_sides())
+            sides = sides[0].value+sides[1].value+sides[2].value
+            if 'bottom' not in sides: connection = 'not_bottom'
+            if 'right' not in sides: connection = 'not_right'
+            if 'top' not in sides: connection = 'not_top'
+            if 'left' not in sides: connection = 'not_left'
+            tile_layer += connection_region_dict[connection]
+        # double values if shield is present
+        if tile.shield:
+            tile_layer += tile_layer
     tile_array = np.append(tile_array,[tile_layer],axis=0)
 
     # make abbey
+    tile_layer = np.zeros((3,3))
     if tile.chapel:
-        tile_layer = connection_region_dict['center']
+        # scale value with number of neighbours
+        neighbours = [ [0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1] ] # shift requires to get to 8 tiles around
+        neighbour_num = 1
+        for n in neighbours:
+            shifted_tile = game.state.board[x+n[0]][y+n[1]]
+            if shifted_tile is not None:
+                neighbour_num+=1
+        tile_layer = neighbour_num * np.array(connection_region_dict['center'])
+
     else:
         tile_layer = connection_region_dict['empty']
-    tile_array = np.append(tile_array,[tile_layer],axis=0)    
+    tile_array = np.append(tile_array,[tile_layer],axis=0)
 
     return tile_array
 
@@ -94,3 +125,47 @@ def add_meeples_to_tile_array(game,tile_array,connection_region_dict):
             meeple_row = meeple_placed.coordinate_with_side.coordinate.row
             meeple_col = meeple_placed.coordinate_with_side.coordinate.column
             meeple_side = meeple_placed.coordinate_with_side.side.value
+
+def plot_carcassonne_board(board_array):
+    # Assuming board_array has shape (layers, height, width)
+    height, width = board_array.shape[1], board_array.shape[2]
+
+    # Start with no background
+    rgb_image = np.zeros((height, width, 3))
+    rgb_image[:, :] = [1,1,1]#[122/225,180/225,20/225]
+
+    # Field (any tile) color (green)
+    tile_mask =  ~np.isnan(board_array[1])
+    rgb_image[tile_mask] = [0,0.5,0]
+
+    # Roads (grey) - Layer 1
+    road_mask = board_array[1] > 0
+    intersection_mask = board_array[1] > 1
+    rgb_image[road_mask] = [0.5,0.5,0.5]#[217/225,223/225,190/225]
+    rgb_image[intersection_mask] = [0.75,0.75,0.75]#[217/225,223/225,190/225]
+
+    # Cities (brown) - Layer 2
+    city_mask = board_array[2] > 0
+    rgb_image[city_mask] = [0,0,0.5]# [134/225,72/225,31/225]
+    city_shield_mask = board_array[2] > 1
+    rgb_image[city_shield_mask] = [0,0,0.75]# [134/225,72/225,31/225]
+
+    # Abbeys (red) - Layer 3
+    abbey_mask = board_array[3] > 0
+    for s in range(8):
+        abbey_score = board_array[3] > s
+        rgb_image[abbey_score] = [s/8,0,0]# [183/225,29/225,13/225]
+
+    # Add dashed black grid lines every 3 cells
+    offset = 0.6
+    for x in range(0, width, 3):
+        plt.axvline(x-offset, color='black', linestyle='--', linewidth=0.5)
+    for y in range(0, height, 3):
+        plt.axhline(y-offset, color='black', linestyle='--', linewidth=0.5)
+
+    plt.imshow(rgb_image)
+    #plt.title("Carcassonne Board")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+    

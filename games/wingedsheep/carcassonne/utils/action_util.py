@@ -31,7 +31,5 @@ class ActionUtil:
             possible_meeple_actions = PossibleMoveFinder.possible_meeple_actions(game_state=state)
             actions.extend(possible_meeple_actions)
             actions.append(PassAction())
-        if len(actions)==0:
-            actions.append(PassAction())
         return actions
 
