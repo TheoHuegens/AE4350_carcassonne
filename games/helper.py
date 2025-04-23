@@ -145,6 +145,26 @@ def add_meeples_to_tile_array(game,board_array,connection_region_dict):
             tile_layer = np.array(connection_region_dict[meeple_side]) * player_factor
             board_array[0,3*meeple_row:3*meeple_row+3,3*meeple_col:3*meeple_col+3] = tile_layer
 
+def build_state_vector(game,action):
+    for p in range(game.players):
+        if p==0: # TODO: make sure AI plays as p0
+            meeples_inhand_mine = game.state.meeples[p]
+            score_mine = game.state.scores[p]
+        else:
+            meeples_inhand_opp = game.state.meeples[p]
+            score_opp = game.state.scores[p]
+    cards_left_in_drawpile = len(game.state.deck)
+    
+    state_vector = [
+        cards_left_in_drawpile,
+        meeples_inhand_mine,
+        meeples_inhand_opp,
+        score_mine,
+        score_opp
+    ]
+    
+    return state_vector
+    
 
 def find_contigous_area(target_x, target_y, arr):
 
@@ -167,7 +187,7 @@ def find_contigous_area(target_x, target_y, arr):
     
     return connected_mask
 
-def plot_carcassonne_board(board_array, ax=None):
+def plot_carcassonne_board(board_array,state_vector,player_labels, ax=None):
     # initialize plot
     if ax is None:
         fig, ax = plt.subplots()
@@ -217,6 +237,21 @@ def plot_carcassonne_board(board_array, ax=None):
     ax.plot(mine_x, mine_y, marker='x', linestyle='None', color='yellow', markersize=5, markeredgewidth=2)
     ax.plot(oppo_x, oppo_y, marker='x', linestyle='None', color='magenta', markersize=5, markeredgewidth=2)
     
+    # add text for vector infos
+    cards_left, meeples_0, meeples_1, score_0, score_1 = state_vector    # === Title (top center) ===
+    ax.set_title(f"Turns Left: {cards_left}", fontsize=12, weight='bold')
+
+    # === Legend-like ASCII info block (bottom right corner) ===
+
+    # Bottom annotation for player info
+    ax.text(0.01, -0.06,
+            f"[P1] {player_labels[0]['name']}   Score: {score_0}    Meeples: {meeples_0}",
+            transform=ax.transAxes, fontsize=9, color=player_labels[0]['color'], family='monospace')
+
+    ax.text(0.01, -0.12,
+            f"[P2] {player_labels[1]['name']}   Score: {score_1}    Meeples: {meeples_1}",
+            transform=ax.transAxes, fontsize=9, color=player_labels[1]['color'], family='monospace')
+    
     # Add dashed black grid lines every 3 cells
     offset = 0.6
     for x in range(0, width, 3):
@@ -225,3 +260,39 @@ def plot_carcassonne_board(board_array, ax=None):
         ax.axhline(y - offset, color='black', linestyle='--', linewidth=0.5)
 
     ax.axis("off")
+    
+def print_state(game):
+    carcassonne_game_state = game.state
+    print_object = {
+        "scores": {
+            "player 1": carcassonne_game_state.scores[0],
+            "player 2": carcassonne_game_state.scores[1]
+        },
+        "meeples": {
+            "player 1": {
+                "normal": str(carcassonne_game_state.meeples[0]) + " / " + str(carcassonne_game_state.meeples[0] + len(list(filter(lambda x: x.meeple_type == MeepleType.NORMAL or x.meeple_type == MeepleType.FARMER, game.state.placed_meeples[0])))),
+                "abbots": str(carcassonne_game_state.abbots[0]) + " / " + str(carcassonne_game_state.abbots[0] + len(list(filter(lambda x: x.meeple_type == MeepleType.ABBOT, game.state.placed_meeples[0])))),
+                "big": str(carcassonne_game_state.big_meeples[0]) + " / " + str(carcassonne_game_state.big_meeples[0] + len(list(filter(lambda x: x.meeple_type == MeepleType.BIG or x.meeple_type == MeepleType.BIG_FARMER, game.state.placed_meeples[0]))))
+            },
+            "player 2": {
+                "normal": str(carcassonne_game_state.meeples[1]) + " / " + str(carcassonne_game_state.meeples[1] + len(list(filter(lambda x: x.meeple_type == MeepleType.NORMAL or x.meeple_type == MeepleType.FARMER, game.state.placed_meeples[1])))),
+                "abbots": str(carcassonne_game_state.abbots[1]) + " / " + str(carcassonne_game_state.abbots[1] + len(list(filter(lambda x: x.meeple_type == MeepleType.ABBOT, game.state.placed_meeples[1])))),
+                "big": str(carcassonne_game_state.big_meeples[1]) + " / " + str(carcassonne_game_state.big_meeples[1] + len(list(filter(lambda x: x.meeple_type == MeepleType.BIG or x.meeple_type == MeepleType.BIG_FARMER, game.state.placed_meeples[1]))))
+            }
+        }
+    }
+
+    print(print_object)
+    
+
+def print_score_history(score_history,player_labels):
+    plt.figure(figsize=(8, 4))
+    plt.plot(np.array(score_history)[:,0], label=player_labels[0]['name'], color=player_labels[0]['color'], linewidth=2)
+    plt.plot(np.array(score_history)[:,1], label=player_labels[1]['name'], color=player_labels[1]['color'], linewidth=2)
+    plt.title("Score Progression Over Game")
+    plt.xlabel("Turn")
+    plt.ylabel("Score")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()

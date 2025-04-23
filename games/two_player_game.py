@@ -19,28 +19,6 @@ from helper import *
 
 #random.seed(1)
 
-def print_state(carcassonne_game_state: CarcassonneGameState):
-    print_object = {
-        "scores": {
-            "player 1": carcassonne_game_state.scores[0],
-            "player 2": carcassonne_game_state.scores[1]
-        },
-        "meeples": {
-            "player 1": {
-                "normal": str(carcassonne_game_state.meeples[0]) + " / " + str(carcassonne_game_state.meeples[0] + len(list(filter(lambda x: x.meeple_type == MeepleType.NORMAL or x.meeple_type == MeepleType.FARMER, game.state.placed_meeples[0])))),
-                "abbots": str(carcassonne_game_state.abbots[0]) + " / " + str(carcassonne_game_state.abbots[0] + len(list(filter(lambda x: x.meeple_type == MeepleType.ABBOT, game.state.placed_meeples[0])))),
-                "big": str(carcassonne_game_state.big_meeples[0]) + " / " + str(carcassonne_game_state.big_meeples[0] + len(list(filter(lambda x: x.meeple_type == MeepleType.BIG or x.meeple_type == MeepleType.BIG_FARMER, game.state.placed_meeples[0]))))
-            },
-            "player 2": {
-                "normal": str(carcassonne_game_state.meeples[1]) + " / " + str(carcassonne_game_state.meeples[1] + len(list(filter(lambda x: x.meeple_type == MeepleType.NORMAL or x.meeple_type == MeepleType.FARMER, game.state.placed_meeples[1])))),
-                "abbots": str(carcassonne_game_state.abbots[1]) + " / " + str(carcassonne_game_state.abbots[1] + len(list(filter(lambda x: x.meeple_type == MeepleType.ABBOT, game.state.placed_meeples[1])))),
-                "big": str(carcassonne_game_state.big_meeples[1]) + " / " + str(carcassonne_game_state.big_meeples[1] + len(list(filter(lambda x: x.meeple_type == MeepleType.BIG or x.meeple_type == MeepleType.BIG_FARMER, game.state.placed_meeples[1]))))
-            }
-        }
-    }
-
-    print(print_object)
-
 board_size = 20
 game = CarcassonneGame(
     players=2,
@@ -52,6 +30,12 @@ game = CarcassonneGame(
 # turn on matplotlb interactive plotting
 fig, ax = plt.subplots()
 writer = PillowWriter(fps=16)
+score_history = []
+player_labels = {
+    0: {"name":"agent_random ","color":"red"},
+    1: {"name":"agent_closest","color":"blue"}
+}
+
 with writer.saving(fig, "carcassonne_game.gif", dpi=150):
 
     turn = 0
@@ -75,13 +59,17 @@ with writer.saving(fig, "carcassonne_game.gif", dpi=150):
 
         # translate game state to array
         board_array = build_board_array(game,action)
+        state_vector = build_state_vector(game,action)
+        score_history.append([state_vector[3],state_vector[4]])
         
         # show
         #game.render()
-        plot_carcassonne_board(board_array, ax=ax)
+        plot_carcassonne_board(board_array,state_vector,player_labels, ax=ax)
         writer.grab_frame()
     
     # end game
-    print_state(carcassonne_game_state=game.state)
+    print_state(game)
 # Display the saved GIF
 display(Image(filename="carcassonne_game.gif"))
+
+print_score_history(score_history,player_labels)
