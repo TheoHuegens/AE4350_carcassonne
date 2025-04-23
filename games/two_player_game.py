@@ -1,6 +1,7 @@
 import random
 import numpy as np
 from typing import Optional
+import matplotlib.pyplot as plt
 
 from wingedsheep.carcassonne.carcassonne_game import CarcassonneGame
 from wingedsheep.carcassonne.carcassonne_game_state import CarcassonneGameState, GamePhase
@@ -39,11 +40,12 @@ def print_state(carcassonne_game_state: CarcassonneGameState):
 
     print(print_object)
 
+board_size = 15
 game = CarcassonneGame(
     players=2,
     tile_sets=[TileSet.BASE],
     supplementary_rules=[],
-    board_size=(20,20)
+    board_size=(board_size,board_size)
 )
 
 while not game.is_finished():
@@ -66,4 +68,8 @@ while not game.is_finished():
     # translate game state to array
     board_array = build_board_array(game,action)
 
+
 print_state(carcassonne_game_state=game.state)
+
+plt.imshow(board_array[1])
+plt.show()

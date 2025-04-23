@@ -6,7 +6,6 @@ from wingedsheep.carcassonne.objects.playing_position import PlayingPosition
 from wingedsheep.carcassonne.utils.possible_move_finder import PossibleMoveFinder
 from wingedsheep.carcassonne.utils.tile_position_finder import TilePositionFinder
 
-
 class ActionUtil:
 
     @staticmethod
@@ -31,6 +30,8 @@ class ActionUtil:
         elif state.phase == GamePhase.MEEPLES:
             possible_meeple_actions = PossibleMoveFinder.possible_meeple_actions(game_state=state)
             actions.extend(possible_meeple_actions)
+            actions.append(PassAction())
+        if len(actions)==0:
             actions.append(PassAction())
         return actions
 

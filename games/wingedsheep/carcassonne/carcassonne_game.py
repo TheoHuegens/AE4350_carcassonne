@@ -11,6 +11,7 @@ class CarcassonneGame:
 
     def __init__(self,
                  players: int = 2,
+                 board_size=(20,20),
                  tile_sets: [TileSet] = (TileSet.BASE, TileSet.THE_RIVER, TileSet.INNS_AND_CATHEDRALS),
                  supplementary_rules: [SupplementaryRule] = (SupplementaryRule.FARMERS, SupplementaryRule.ABBOTS)):
         self.players = players
@@ -19,7 +20,8 @@ class CarcassonneGame:
         self.state: CarcassonneGameState = CarcassonneGameState(
             tile_sets=tile_sets,
             players=players,
-            supplementary_rules=supplementary_rules
+            supplementary_rules=supplementary_rules,
+            board_size=board_size
         )
         self.visualiser = CarcassonneVisualiser()
 
