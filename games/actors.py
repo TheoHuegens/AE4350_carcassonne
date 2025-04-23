@@ -18,9 +18,10 @@ def agent_random(valid_actions):
     action: Optional[Action] = random.choice(valid_actions)
     return action
 
-def agent_closest(valid_actions):
+def agent_closest(valid_actions,game):
     # this plays closest to the center
-    target = [35/2,35/2]
+    board_size = np.array(game.state.board).shape[0]
+    target = [board_size/2,board_size/2]
     
     action_scores = []
     for action_index in range(len(valid_actions)):

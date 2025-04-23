@@ -13,6 +13,7 @@ from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryR
 from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 
 from actors import *
+from helper import *
 
 #random.seed(1)
 
@@ -41,22 +42,28 @@ def print_state(carcassonne_game_state: CarcassonneGameState):
 game = CarcassonneGame(
     players=2,
     tile_sets=[TileSet.BASE],
-    supplementary_rules=[]
+    supplementary_rules=[],
+    board_size=(20,20)
 )
 
 while not game.is_finished():
+    # get game state
     player: int = game.get_current_player()
     valid_actions: [Action] = game.get_possible_actions()
     action: Optional[Action] = random.choice(valid_actions)
     
     # based on player AI
     if player==0:
-        action = agent_closest(valid_actions)
+        action = agent_closest(valid_actions,game)
     elif player==1:
-        action = agent_closest(valid_actions)
+        action = agent_closest(valid_actions,game)
 
+    # enact action
     if action is not None:
         game.step(player, action)
     game.render()
+    
+    # translate game state to array
+    board_array = build_board_array(game,action)
 
 print_state(carcassonne_game_state=game.state)
