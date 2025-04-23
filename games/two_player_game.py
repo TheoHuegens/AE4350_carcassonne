@@ -2,6 +2,7 @@ import random
 import numpy as np
 from typing import Optional
 import matplotlib.pyplot as plt
+from IPython.display import Image, display
 
 from wingedsheep.carcassonne.carcassonne_game import CarcassonneGame
 from wingedsheep.carcassonne.carcassonne_game_state import CarcassonneGameState, GamePhase
@@ -48,25 +49,39 @@ game = CarcassonneGame(
     board_size=(board_size,board_size)
 )
 
-while not game.is_finished():
-    # get game state
-    player: int = game.get_current_player()
-    valid_actions: [Action] = game.get_possible_actions()
-    action: Optional[Action] = random.choice(valid_actions)
+# turn on matplotlb interactive plotting
+fig, ax = plt.subplots()
+writer = PillowWriter(fps=16)
+with writer.saving(fig, "carcassonne_game.gif", dpi=150):
+
+    turn = 0
+    while not game.is_finished():
+        turn += 1
+        
+        # get game state
+        player: int = game.get_current_player()
+        valid_actions: [Action] = game.get_possible_actions()
+        action: Optional[Action] = random.choice(valid_actions)
+        
+        # based on player AI
+        if player==0:
+            action = agent_random(valid_actions)
+        elif player==1:
+            action = agent_closest(valid_actions,game)
+
+        # enact action
+        if action is not None:
+            game.step(player, action)
+
+        # translate game state to array
+        board_array = build_board_array(game,action)
+        
+        # show
+        #game.render()
+        plot_carcassonne_board(board_array, ax=ax)
+        writer.grab_frame()
     
-    # based on player AI
-    if player==0:
-        action = agent_closest(valid_actions,game)
-    elif player==1:
-        action = agent_closest(valid_actions,game)
-
-    # enact action
-    if action is not None:
-        game.step(player, action)
-    game.render()
-
-    # translate game state to array
-    board_array = build_board_array(game,action)
-
-print_state(carcassonne_game_state=game.state)
-plot_carcassonne_board(board_array)
+    # end game
+    print_state(carcassonne_game_state=game.state)
+# Display the saved GIF
+display(Image(filename="carcassonne_game.gif"))

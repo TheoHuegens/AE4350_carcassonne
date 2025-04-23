@@ -22,7 +22,7 @@ class CarcassonneGameState:
             supplementary_rules: [SupplementaryRule] = (SupplementaryRule.FARMERS, SupplementaryRule.ABBOTS),
             players: int = 2,
             board_size: (int, int) = (35, 35),
-            starting_position: Coordinate = Coordinate(6, 15)
+            starting_position: Coordinate = Coordinate(10, 10)
     ):
         self.deck = self.initialize_deck(tile_sets=tile_sets)
         self.supplementary_rules: [SupplementaryRule] = supplementary_rules
