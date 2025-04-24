@@ -15,13 +15,13 @@ from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 
 from helper import *
 
-def agent_random(valid_actions):
+def agent_random(valid_actions,game,player=0):
     # this plays at random
     
     action: Optional[Action] = random.choice(valid_actions)
     return action
 
-def agent_closest(valid_actions,game):
+def agent_center(valid_actions,game,player=0):
     # this plays closest to the center
     board_size = np.array(game.state.board).shape[0]
     target = [board_size/2,board_size/2]
@@ -50,7 +50,7 @@ def agent_closest(valid_actions,game):
     return action
 
 
-def agent_highscore(valid_actions,game,player=0):
+def agent_score_max_own(valid_actions,game,player=0):
     
     game_nextmove = copy.copy(game)
     score_history = []
@@ -64,8 +64,147 @@ def agent_highscore(valid_actions,game,player=0):
         state_vector = build_state_vector(game_nextmove)
         score_history.append([state_vector[3], state_vector[4]])
 
-    score_mine = np.array(score_history)[:,0]
+    score_mine = np.array(score_history)[:,player]
     action_index = np.argmax(score_mine)
+    action = valid_actions[action_index]
+    
+    return action
+
+def agent_score_potential_max_own(valid_actions,game,player=0):
+    
+    current_scores = scores = estimate_potential_score(game)
+    score_history = []
+
+    for action in valid_actions:
+        if action is not None:
+            game_nextmove = copy.copy(game)
+            game_nextmove.step(player, action)
+
+        # Collect game state
+        scores = estimate_potential_score(game_nextmove)
+
+        score_history.append(scores)
+    
+    p_me = player
+    p_opp = player+1
+    if p_opp>=game.state.players: p_opp=0
+    
+    # maximmise own score
+    action_scores = np.array(score_history)[:,p_me]
+    # maximise score gap
+    #action_scores = np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]
+    # maxmimise own score increase
+    #action_scores = np.array(score_history)[:,p_me] - current_scores[p_me]
+    # maxmimise score gap increase
+    #action_scores = (np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]) - (current_scores[p_me]-current_scores[p_opp])
+
+    # pick the best
+    action_index = np.argmax(action_scores)
+    action = valid_actions[action_index]
+    
+    return action
+
+
+def agent_score_potential_max_gap(valid_actions,game,player=0):
+    
+    current_scores = scores = estimate_potential_score(game)
+    score_history = []
+
+    for action in valid_actions:
+        if action is not None:
+            game_nextmove = copy.copy(game)
+            game_nextmove.step(player, action)
+
+        # Collect game state
+        scores = estimate_potential_score(game_nextmove)
+
+        score_history.append(scores)
+    
+    p_me = player
+    p_opp = player+1
+    if p_opp>=game.state.players: p_opp=0
+    
+    # maximmise own score
+    #action_scores = np.array(score_history)[:,p_me]
+    # maximise score gap
+    action_scores = np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]
+    # maxmimise own score increase
+    #action_scores = np.array(score_history)[:,p_me] - current_scores[p_me]
+    # maxmimise score gap increase
+    #action_scores = (np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]) - (current_scores[p_me]-current_scores[p_opp])
+
+    # pick the best
+    action_index = np.argmax(action_scores)
+    action = valid_actions[action_index]
+    
+    return action
+
+
+def agent_score_potential_delta_own(valid_actions,game,player=0):
+    
+    current_scores = scores = estimate_potential_score(game)
+    score_history = []
+
+    for action in valid_actions:
+        if action is not None:
+            game_nextmove = copy.copy(game)
+            game_nextmove.step(player, action)
+
+        # Collect game state
+        scores = estimate_potential_score(game_nextmove)
+
+        score_history.append(scores)
+    
+    p_me = player
+    p_opp = player+1
+    if p_opp>=game.state.players: p_opp=0
+    
+    # maximmise own score
+    #action_scores = np.array(score_history)[:,p_me]
+    # maximise score gap
+    #action_scores = np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]
+    # maxmimise own score increase
+    action_scores = np.array(score_history)[:,p_me] - current_scores[p_me]
+    # maxmimise score gap increase
+    #action_scores = (np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]) - (current_scores[p_me]-current_scores[p_opp])
+
+    # pick the best
+    action_index = np.argmax(action_scores)
+    action = valid_actions[action_index]
+    
+    return action
+
+
+def agent_score_potential_delta_gap(valid_actions,game,player=0):
+    
+    current_scores = scores = estimate_potential_score(game)
+    score_history = []
+
+    for action in valid_actions:
+        if action is not None:
+            game_nextmove = copy.copy(game)
+            game_nextmove.step(player, action)
+
+        # Collect game state
+        scores = estimate_potential_score(game_nextmove)
+
+        score_history.append(scores)
+    
+    p_me = player
+    p_opp = player+1
+    if p_opp>=game.state.players: p_opp=0
+    
+    # maximmise own score
+    #action_scores = np.array(score_history)[:,p_me]
+    # maximise score gap
+    #action_scores = np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]
+    # maxmimise own score increase
+    #action_scores = np.array(score_history)[:,p_me] - current_scores[p_me]
+    # maxmimise score gap increase
+    action_scores = (np.array(score_history)[:,p_me] - np.array(score_history)[:,p_opp]) - (current_scores[p_me]-current_scores[p_opp])
+
+    # pick the best
+    action_index = np.argmax(action_scores)
     action = valid_actions[action_index]
     
     return action

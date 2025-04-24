@@ -13,19 +13,22 @@ class TilePositionFinder:
             return [PlayingPosition(coordinate=game_state.starting_position, turns=0)]
 
         playing_positions = []
+        board_size = len(game_state.board[0])
+        margin=2
 
         for row_index, board_row in enumerate(game_state.board):
             for column_index, column_tile in enumerate(board_row):
                 if column_tile is not None:
                     continue
+                if 0+margin<=row_index<=board_size-margin and 0+margin<=column_index<=board_size-margin:
+                
+                    for tile_turns in range(0, 4):
+                        top = game_state.get_tile(row_index - 1, column_index)
+                        bottom = game_state.get_tile(row_index + 1, column_index)
+                        left = game_state.get_tile(row_index, column_index - 1)
+                        right = game_state.get_tile(row_index, column_index + 1)
 
-                for tile_turns in range(0, 4):
-                    top = game_state.get_tile(row_index - 1, column_index)
-                    bottom = game_state.get_tile(row_index + 1, column_index)
-                    left = game_state.get_tile(row_index, column_index - 1)
-                    right = game_state.get_tile(row_index, column_index + 1)
-
-                    if TileFitter.fits(tile_to_play.turn(tile_turns), top=top, bottom=bottom, left=left, right=right, game_state=game_state):
-                        playing_positions.append(PlayingPosition(coordinate=Coordinate(row=row_index, column=column_index), turns=tile_turns))
+                        if TileFitter.fits(tile_to_play.turn(tile_turns), top=top, bottom=bottom, left=left, right=right, game_state=game_state):
+                            playing_positions.append(PlayingPosition(coordinate=Coordinate(row=row_index, column=column_index), turns=tile_turns))
 
         return playing_positions

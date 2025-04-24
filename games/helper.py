@@ -2,8 +2,11 @@ import random
 import numpy as np
 from typing import Optional
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from matplotlib.animation import FuncAnimation, PillowWriter
 from scipy.ndimage import label
+from scipy.ndimage import convolve
+from collections import deque
 
 from wingedsheep.carcassonne.carcassonne_game import CarcassonneGame
 from wingedsheep.carcassonne.carcassonne_game_state import CarcassonneGameState, GamePhase
@@ -15,9 +18,8 @@ from wingedsheep.carcassonne.objects.meeple_type import MeepleType
 from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryRule
 from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 
-def build_board_array(game):
-    
-    # how to make array
+def construct_subtile_dict(do_norm=False):
+
     connection_region_dict = {
         # empty (different from no tile) and full tile 
         'empty':            [[0,0,0],[0,0,0],[0,0,0]],
@@ -56,7 +58,25 @@ def build_board_array(game):
         'not_left':         [[1,1,1],[0,1,1],[1,1,1]],
         'full':             [[1,1,1],[1,1,1],[1,1,1]]
     }
+    # Normalize the entries
+    normalized_connection_region_dict = {}
+    for key, mat in connection_region_dict.items():
+        arr = np.array(mat, dtype=np.float32)
+        total = arr.sum()
+        if total > 0:
+            arr /= total
+        normalized_connection_region_dict[key] = arr  
+    # use normed set or not  
+    if do_norm:
+        connection_region_dict = normalized_connection_region_dict
+
+    return connection_region_dict
     
+def build_board_array(game,do_norm=True):
+    
+    connection_region_dict=construct_subtile_dict(do_norm=do_norm)
+    
+    # go through board tiles and fill as needed
     board_size = np.array(game.state.board).shape[0]
     board_array = np.zeros((10,3*board_size,3*board_size))
     board_array[:] = np.nan
@@ -66,7 +86,8 @@ def build_board_array(game):
             if tile is not None:
                 tile_array = build_tile_array(tile,game,x,y,connection_region_dict)
                 board_array[0:4,3*x:3*x+3,3*y:3*y+3] = tile_array
-                
+    
+    # add meeples on their tile subposition based on coordinate with side
     add_meeples_to_tile_array(game,board_array,connection_region_dict)
     
     return board_array
@@ -164,90 +185,176 @@ def build_state_vector(game):
     ]
     
     return state_vector
+
+def find_contiguous_area(target_x, target_y, arr):
+    """
+    Return a boolean mask of the same shape as `arr`, where True indicates
+    pixels that are part of the same 4-connected non-zero region as (target_y, target_x).
     
-
-def find_contigous_area(target_x, target_y, arr):
-
-    # Define an 8-connected structure for labeling
-    structure = np.ones((3, 3), dtype=int)
-
-    # Label connected regions
-    labeled_array, num_features = label(arr > 0, structure=structure)
-
-    # Get label value at the chosen pixel
-    target_label = labeled_array[target_y, target_x]
-
-    # Create a mask for all pixels connected to the target
-    connected_mask = labeled_array == target_label
-    connected_mask = connected_mask.astype(int)
+    Parameters:
+        target_x (int): Column index (x)
+        target_y (int): Row index (y)
+        arr (ndarray): 2D array (e.g., mask of roads, cities, etc.)
     
-    # Optional: visualize or use the mask
-    #print("Connected region to ({}, {}):".format(target_y, target_x))
-    #print(connected_mask)
+    Returns:
+        mask (ndarray): Boolean mask of the connected region
+    """
+    h, w = arr.shape
+    if not (0 <= target_x < w and 0 <= target_y < h):
+        raise ValueError("target_x and target_y must be within array bounds")
+
+    if arr[target_y, target_x] == 0:
+        return np.zeros_like(arr, dtype=bool)
+
+    target_value = arr[target_y, target_x]
+    visited = np.zeros_like(arr, dtype=bool)
+    queue = deque([(target_y, target_x)])
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 4-connected (no diagonals)
+
+    while queue:
+        y, x = queue.popleft()
+        if visited[y, x]:
+            continue
+        visited[y, x] = True
+
+        for dy, dx in directions:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w:
+                if not visited[ny, nx] and arr[ny, nx] != 0:
+                    queue.append((ny, nx))
+
+    return visited
+
+
+def interpret_board_array(board_array,state_vector):
+                
+    # read state vector
+    cards_left, meeples_0, meeples_1, score_0, score_1 = state_vector
     
-    return connected_mask
-
-def plot_carcassonne_board(board_array,state_vector,player_labels, ax=None):
-    # initialize plot
-    if ax is None:
-        fig, ax = plt.subplots()
-    ax.clear()
-
-    # Assuming board_array has shape (layers, height, width)
-    height, width = board_array.shape[1], board_array.shape[2]
-
-    # Start with no background
-    rgb_image = np.zeros((height, width, 3))
-    background = 0.9
-    rgb_image[:, :] = [background,background,background]
-
-    # Field (any tile) color (green)
+    # read board array
     tile_mask =  ~np.isnan(board_array[1])
-    rgb_image[tile_mask] = [0,0.5,0]
-
-    # Roads (grey) - Layer 1
     road_mask = board_array[1] > 0
     intersection_mask = board_array[1] > 1
     connected_road_mask = ( road_mask ^ intersection_mask) == True
-    rgb_image[road_mask] = [0.5,0.5,0.5]
-    rgb_image[intersection_mask] = [0.75,0.75,0.75]
-
-    # Cities (blue) - Layer 2
     city_mask = board_array[2] > 0
-    rgb_image[city_mask] = [0,0,0.5]
     city_shield_mask = board_array[2] > 1
-    rgb_image[city_shield_mask] = [0,0,0.75]
-
-    # Abbeys (red) - Layer 3
     abbey_mask = board_array[3] > 0
-    for s in range(8):
-        abbey_score_mask = board_array[3] > s
-        rgb_image[abbey_score_mask] = [s/8,0,0]
-        
-    # add meeples - Layer 0
+
+    # read meeple positions
     meeples_mask_mine = board_array[0] > 0
     meeples_mask_oppo = board_array[0] < 0
     mine_y, mine_x = np.where(meeples_mask_mine)
     oppo_y, oppo_x = np.where(meeples_mask_oppo)
 
-    # show board
+    # get contigous areas intersecting meeples per player
+    # get all subtiles owned by my meeples
+    owned_mask_mine = np.zeros_like(tile_mask).astype(bool)
+    for m in range(len(mine_x)): # for every meeple placed
+        x,y = mine_x[m],mine_y[m]
+        owned_mask_mine |= find_contiguous_area(x, y, connected_road_mask).astype(bool)
+        owned_mask_mine |= find_contiguous_area(x, y, city_mask).astype(bool)
+        owned_mask_mine |= find_contiguous_area(x, y, abbey_mask).astype(bool)
+    # get all subtiles owned by opponent's meeples
+    owned_mask_oppo = np.zeros_like(tile_mask).astype(bool)
+    for m in range(len(oppo_x)): # for every meeple placed
+        x,y = oppo_x[m],oppo_y[m]
+        owned_mask_oppo |= find_contiguous_area(x, y, connected_road_mask).astype(bool)
+        owned_mask_oppo |= find_contiguous_area(x, y, city_mask).astype(bool)
+        owned_mask_oppo |= find_contiguous_area(x, y, abbey_mask).astype(bool)
+
+    interpret_board_dict = {
+        "tile_mask": tile_mask,
+        "road_mask": road_mask,
+        "intersection_mask": intersection_mask,
+        "connected_road_mask": connected_road_mask,
+        "city_mask": city_mask,
+        "city_shield_mask": city_shield_mask,
+        "abbey_mask": abbey_mask,
+        "meeples_mask_0": meeples_mask_mine,
+        "meeples_mask_1": meeples_mask_oppo,
+        "owned_mask_0": owned_mask_mine,
+        "owned_mask_1": owned_mask_oppo
+    }
+    
+    return interpret_board_dict
+
+def estimate_potential_score(game):
+    state_vector = build_state_vector(game)
+
+    board_array_bool = build_board_array(game,do_norm=False)
+    board_array_vals = build_board_array(game,do_norm=True)
+    interpret_board_dict = interpret_board_array(board_array_bool,state_vector)
+
+    # layers 1=roads, 2=city, 3=abbeys
+    point_array = np.nansum( board_array_vals[1:4], axis=0 )
+    scores = []
+    for p in range(2):# for 2 players
+        point_array_p = point_array * interpret_board_dict[f"owned_mask_{p}"]
+        scores.append(np.sum(point_array_p))
+    
+    return scores
+    
+def plot_carcassonne_board(board_array,state_vector,player_labels, interpret_board_dict, ax=None):
+    # initialize plot
+    if ax is None:
+        fig, ax = plt.subplots()
+    ax.clear()
+    
+    # Assuming board_array has shape (layers, height, width)
+    height, width = board_array.shape[1], board_array.shape[2]
+
+    # Start with background
+    rgb_image = np.zeros((height, width, 3))
+    background = 0.9
+    rgb_image[:, :] = [background,background,background]
+    # add each element
+    rgb_image[interpret_board_dict["tile_mask"]] = [0,0.5,0]
+    rgb_image[interpret_board_dict["road_mask"]] = [0.5,0.5,0.5]
+    rgb_image[interpret_board_dict["intersection_mask"]] = [0.75,0.75,0.75]
+    rgb_image[interpret_board_dict["city_mask"]] = [0,0,0.5]
+    rgb_image[interpret_board_dict["city_shield_mask"]] = [0,0,0.75]
+    rgb_image[interpret_board_dict["abbey_mask"]] = [1,0,0]
     ax.imshow(rgb_image)
     
-    # show meeples
-    ax.plot(mine_x, mine_y, marker='x', linestyle='None', color=player_labels[0]['color'], markersize=5, markeredgewidth=2)
-    ax.plot(oppo_x, oppo_y, marker='x', linestyle='None', color=player_labels[1]['color'], markersize=5, markeredgewidth=2)
+    # Add hashed overlays using contourf hatching
+    for idx, label in player_labels.items():
+        key = f"owned_mask_{idx}"
+        owned_mask = interpret_board_dict[key]
+        color = label['color']
+        if idx==0:
+            hatches = ['', '----']
+        else:
+            hatches = ['', '||||']
+
+        # Use contourf with hatching to overlay the owned region
+        ax.contourf(
+            owned_mask.astype(int),
+            levels=1,
+            hatches=hatches,
+            alpha=0.,  # fully transparent fill
+            colors=[color],  # hatch color
+            zorder=5
+        )
+        # Set hatch color manually (defaults to black otherwise)
+        #for collection in contours.collections:
+        #    collection.set_edgecolor(color)
+        #    collection.set_linewidth(0.5)  # optional: finer lines
+
+                    
+    # add meeples - Layer 0
+    mine_y, mine_x = np.where(interpret_board_dict["meeples_mask_0"])
+    oppo_y, oppo_x = np.where(interpret_board_dict["meeples_mask_1"])
+    ax.plot(mine_x, mine_y, marker='x', linestyle='None', color=player_labels[0]['color'], markersize=5, markeredgewidth=2,zorder=6)
+    ax.plot(oppo_x, oppo_y, marker='x', linestyle='None', color=player_labels[1]['color'], markersize=5, markeredgewidth=2,zorder=6)
     
     # add text for vector infos
     cards_left, meeples_0, meeples_1, score_0, score_1 = state_vector    # === Title (top center) ===
     ax.set_title(f"Turns Left: {cards_left}", fontsize=12, weight='bold')
 
-    # === Legend-like ASCII info block (bottom right corner) ===
-
     # Bottom annotation for player info
     ax.text(0.01, -0.06,
             f"[P1] {player_labels[0]['name']}   Score: {score_0}    Meeples: {meeples_0}",
             transform=ax.transAxes, fontsize=9, color=player_labels[0]['color'], family='monospace')
-
     ax.text(0.01, -0.12,
             f"[P2] {player_labels[1]['name']}   Score: {score_1}    Meeples: {meeples_1}",
             transform=ax.transAxes, fontsize=9, color=player_labels[1]['color'], family='monospace')

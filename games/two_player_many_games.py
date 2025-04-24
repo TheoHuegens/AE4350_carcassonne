@@ -20,8 +20,10 @@ from actors import *
 from helper import *
 
 do_plot = True  # Toggle this to False to skip plotting and speed things up
+do_convert = True
+do_norm = True
 board_size = 20
-agents = ["agent_random","agent_closest","agent_highscore"]
+agents = ["agent_random","agent_center","agent_score_max_own","agent_score_potential_max_own","agent_score_potential_max_gap","agent_score_potential_delta_own","agent_score_potential_delta_gap"]
 player_labels = {
     0: {"name": agents[1], "color": "orange"},
     1: {"name": agents[1], "color": "blue"}
@@ -77,16 +79,18 @@ for i in range(10):
             game.step(player, action)
 
         # Collect game state
-        board_array = build_board_array(game)
-        state_vector = build_state_vector(game)
-        score_history.append([state_vector[3], state_vector[4]])
+        if do_convert:
+            board_array = build_board_array(game,do_norm=do_norm)
+            state_vector = build_state_vector(game)
+            score_history.append([state_vector[3], state_vector[4]])
+            interpret_board_dict = interpret_board_array(board_array,state_vector)
 
     #print_state(game)
     final_score_history.append(score_history)
 
     # Show last plot only if enabled
     if do_plot:
-        plot_carcassonne_board(board_array, state_vector, player_labels, ax=None)
+        plot_carcassonne_board(board_array, state_vector, player_labels, interpret_board_dict, ax=ax)
         plot_score_history(score_history, player_labels)
 
     elaped = time.time() - starttime
