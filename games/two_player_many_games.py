@@ -1,99 +1,59 @@
+import time
 import random
 import numpy as np
-from typing import Optional
 import matplotlib.pyplot as plt
-from IPython.display import Image, display
-import contextlib
-import time
-
-from wingedsheep.carcassonne.carcassonne_game import CarcassonneGame
-from wingedsheep.carcassonne.carcassonne_game_state import CarcassonneGameState, GamePhase
-from wingedsheep.carcassonne.objects.actions.action import Action
-from wingedsheep.carcassonne.objects.actions.pass_action import PassAction
-from wingedsheep.carcassonne.objects.actions.tile_action import TileAction
-from wingedsheep.carcassonne.objects.actions.meeple_action import MeepleAction
-from wingedsheep.carcassonne.objects.meeple_type import MeepleType
-from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryRule
-from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
+import seaborn as sns
 
 from actors import *
 from helper import *
+from two_player_game import two_player_game
 
-do_plot = True  # Toggle this to False to skip plotting and speed things up
-do_convert = True
+# === SETTINGS ===
+do_plot = False
+do_convert = False
 do_norm = True
-board_size = 20
-agents = ["agent_random","agent_center","agent_score_max_own","agent_score_potential_max_own","agent_score_potential_max_gap","agent_score_potential_delta_own","agent_score_potential_delta_gap"]
-player_labels = {
-    0: {"name": agents[1], "color": "orange"},
-    1: {"name": agents[1], "color": "blue"}
-}
+board_size = 15
+max_turn = 500
+games_per_match = 10
 
-final_score_history = []
+# === AGENTS ===
+agents_to_test = ["agent_random", "agent_center", "agent_score_max_own","agent_score_potential_max_own","agent_score_potential_max_gap","agent_score_potential_delta_own","agent_score_potential_delta_gap"]
 
-# Only prepare plotting if do_plot is True
-if do_plot:
-    fig, ax = plt.subplots()
-    writer = PillowWriter(fps=16)
-    writer_context = writer.saving(fig, "carcassonne_game.gif", dpi=150)
-else:
-    fig, ax, writer, writer_context = None, None, None, contextlib.nullcontext()
+# === SIMULATE ALL MATCHUPS ===
+starttime = time.time()
+num_agents = len(agents_to_test)
+win_counts = np.zeros((num_agents, num_agents))  # rows: player0, cols: player1
 
-# Run games with optional plotting
-for i in range(10):
-    starttime = time.time()
-    random.seed(i)
-    turn = 0
-    game = CarcassonneGame(
-        players=2,
-        tile_sets=[TileSet.BASE],
-        supplementary_rules=[],
-        board_size=(board_size, board_size)
-    )
+for i, p0 in enumerate(agents_to_test):
+    for j, p1 in enumerate(agents_to_test):
+        final_score_history = []
 
-    score_history = []
-    while not game.is_finished():
-        turn += 1
+        for game_seed in range(games_per_match):
+            random.seed(game_seed)
+            score_history = two_player_game(board_size, max_turn, do_convert, False, p0, p1)
 
-        player = game.get_current_player()
-        valid_actions = game.get_possible_actions()
-        action = random.choice(valid_actions)
+            if do_plot:
+                player_labels = {
+                    0: {"name": p0, "color": "orange"},
+                    1: {"name": p1, "color": "blue"}
+                }
+                plot_score_history(score_history, player_labels)
 
-        # AI decisions
-        if player == 0:
-            if player_labels[player]["name"]=="agent_random":
-                action = agent_random(valid_actions)
-            if player_labels[player]["name"]=="agent_closest":
-                action = agent_closest(valid_actions, game)
-            if player_labels[player]["name"]=="agent_highscore":
-                action = agent_highscore(valid_actions, game, player)
-        elif player == 1:
-            if player_labels[player]["name"]=="agent_random":
-                action = agent_random(valid_actions)
-            if player_labels[player]["name"]=="agent_closest":
-                action = agent_closest(valid_actions, game)
-            if player_labels[player]["name"]=="agent_highscore":
-                action = agent_highscore(valid_actions, game, player)
+            final_score = score_history[-1]
+            final_score_history.append(final_score)
 
-        if action is not None:
-            game.step(player, action)
+            # Determine winner
+            if final_score[0] > final_score[1]:
+                win_counts[i, j] += 1
+            elif final_score[0] == final_score[1]:
+                win_counts[i, j] += 0.5  # count draws as half
 
-        # Collect game state
-        if do_convert:
-            board_array = build_board_array(game,do_norm=do_norm)
-            state_vector = build_state_vector(game)
-            score_history.append([state_vector[3], state_vector[4]])
-            interpret_board_dict = interpret_board_array(board_array,state_vector)
+        # Optional: print quick summary per matchup
+        print(f"Match {p0} vs {p1}: {win_counts[i,j]}/{games_per_match} wins for {p0}")
 
-    #print_state(game)
-    final_score_history.append(score_history)
+# === COMPUTE AND PLOT WIN RATE MATRIX ===
+win_rates = win_counts / games_per_match
+plot_winrate_heatmap(win_rates, agents_to_test)
 
-    # Show last plot only if enabled
-    if do_plot:
-        plot_carcassonne_board(board_array, state_vector, player_labels, interpret_board_dict, ax=ax)
-        plot_score_history(score_history, player_labels)
-
-    elaped = time.time() - starttime
-    print(f'game took {elaped} [s]')
-    
-plot_summary_results(final_score_history,player_labels)
+elapsed = time.time() - starttime
+print(f"All matches completed in {elapsed:.2f} seconds.")

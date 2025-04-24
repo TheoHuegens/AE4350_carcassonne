@@ -7,6 +7,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from scipy.ndimage import label
 from scipy.ndimage import convolve
 from collections import deque
+import seaborn as sns
 
 from wingedsheep.carcassonne.carcassonne_game import CarcassonneGame
 from wingedsheep.carcassonne.carcassonne_game_state import CarcassonneGameState, GamePhase
@@ -446,6 +447,68 @@ def plot_summary_results(final_score_history,player_labels):
     plt.ylabel("Final Score")
     plt.title("Final Scores Boxplot")
     plt.grid(True, axis='y')
+    plt.tight_layout()
+    plt.show()
+
+import matplotlib.pyplot as plt
+
+def plot_final_scores_boxplot(final_score_history, player_labels=None, title="Final Score Distribution Over Games"):
+    """
+    Plots a boxplot of final scores for each player across multiple games.
+
+    Args:
+        final_score_history (list of list): Each inner list should contain scores of [player_1_score, player_2_score].
+        player_labels (list of str, optional): Labels for the players. Default is ["Player 1", "Player 2"].
+        title (str): Title of the plot.
+    """
+    # Default player labels
+    if player_labels is None:
+        player_labels = ["Player 1", "Player 2"]
+
+    # Transpose the list to separate scores by player
+    player_scores = list(zip(*final_score_history))
+
+    # Plot setup
+    plt.figure(figsize=(6, 4))
+    box = plt.boxplot(
+        player_scores,
+        labels=player_labels,
+        patch_artist=True,
+        boxprops=dict(facecolor="skyblue", color="blue"),
+        medianprops=dict(color="darkred"),
+        whiskerprops=dict(color="blue"),
+        capprops=dict(color="blue")
+    )
+
+    plt.title(title)
+    plt.ylabel("Final Score")
+    plt.grid(axis="y", linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+def plot_winrate_heatmap(win_matrix, agents):
+    plt.figure(figsize=(8, 6))
+    ax = sns.heatmap(
+        100*win_matrix,
+        annot=True,
+        fmt=".1f",
+        cmap="Reds",
+        cbar=True,
+        xticklabels=agents,
+        yticklabels=agents,
+        annot_kws={"size": 12, "weight": "bold", "color": "black"},
+        linewidths=0.5,
+        linecolor='white'
+    )
+
+    ax.set_xlabel("Opponent", fontsize=14, weight="bold")
+    ax.set_ylabel("Player", fontsize=14, weight="bold")
+    ax.set_title("Win Rate Heatmap (percent)", fontsize=16, weight="bold")
+
+    # Rotate x-axis labels for readability
+    plt.xticks(rotation=45, ha="right", fontsize=12)
+    plt.yticks(rotation=0, fontsize=12)
+
     plt.tight_layout()
     plt.show()
 
