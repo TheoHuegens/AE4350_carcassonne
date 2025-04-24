@@ -13,8 +13,8 @@ do_plot = False
 do_convert = False
 do_norm = True
 board_size = 15
-max_turn = 500
-games_per_match = 10
+max_turn = 50
+games_per_match = 1
 
 # === AGENTS ===
 agents_to_test = ["agent_random", "agent_center", "agent_score_max_own","agent_score_potential_max_own","agent_score_potential_max_gap","agent_score_potential_delta_own","agent_score_potential_delta_gap"]
@@ -22,7 +22,8 @@ agents_to_test = ["agent_random", "agent_center", "agent_score_max_own","agent_s
 # === SIMULATE ALL MATCHUPS ===
 starttime = time.time()
 num_agents = len(agents_to_test)
-win_counts = np.zeros((num_agents, num_agents))  # rows: player0, cols: player1
+win_counts_matrix = np.zeros((num_agents, num_agents))  # rows: player0, cols: player1
+score_gap_matrix = np.zeros((num_agents, num_agents))
 
 for i, p0 in enumerate(agents_to_test):
     for j, p1 in enumerate(agents_to_test):
@@ -41,19 +42,23 @@ for i, p0 in enumerate(agents_to_test):
 
             final_score = score_history[-1]
             final_score_history.append(final_score)
+            score_gap_matrix[i, j] += final_score[0] - final_score[1]
 
             # Determine winner
             if final_score[0] > final_score[1]:
-                win_counts[i, j] += 1
+                win_counts_matrix[i, j] += 1
             elif final_score[0] == final_score[1]:
-                win_counts[i, j] += 0.5  # count draws as half
+                win_counts_matrix[i, j] += 0.5  # count draws as half
 
         # Optional: print quick summary per matchup
-        print(f"Match {p0} vs {p1}: {win_counts[i,j]}/{games_per_match} wins for {p0}")
+        print(f"Match {p0} vs {p1}: {win_counts_matrix[i,j]}/{games_per_match} wins for {p0}")
 
 # === COMPUTE AND PLOT WIN RATE MATRIX ===
-win_rates = win_counts / games_per_match
+win_rates = win_counts_matrix / games_per_match
+score_gap_matrix /= games_per_match
+
 plot_winrate_heatmap(win_rates, agents_to_test)
+plot_scoregap_heatmap(score_gap_matrix, agents_to_test)
 
 elapsed = time.time() - starttime
 print(f"All matches completed in {elapsed:.2f} seconds.")

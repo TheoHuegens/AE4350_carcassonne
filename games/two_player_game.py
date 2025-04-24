@@ -72,6 +72,8 @@ def two_player_game(
                 action = agent_score_potential_delta_own(valid_actions, game, player=player)
             elif player_agent=='agent_score_potential_delta_gap':
                 action = agent_score_potential_delta_gap(valid_actions, game, player=player)
+            elif player_agent=='agent_user_input':
+                action = agent_user_input(valid_actions, game, player=0)
             else:
                 action = agent_random(valid_actions, game, player=player)
                 
@@ -107,14 +109,14 @@ def two_player_game(
 if __name__ == '__main__':
 
     # settings
-    do_plot = False
-    do_convert = False
+    do_plot = True
+    do_convert = True
     do_norm = True
     board_size = 20
     max_turn = 500
 
     # agents
-    p0='agent_center'
+    p0='agent_user_input'
     p1='agent_center'
 
     # initial vars

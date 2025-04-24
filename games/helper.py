@@ -368,6 +368,7 @@ def plot_carcassonne_board(board_array,state_vector,player_labels, interpret_boa
         ax.axhline(y - offset, color='black', linestyle='--', linewidth=0.5)
 
     ax.axis("off")
+    return ax
     
 def print_state(game):
     carcassonne_game_state = game.state
@@ -450,8 +451,6 @@ def plot_summary_results(final_score_history,player_labels):
     plt.tight_layout()
     plt.show()
 
-import matplotlib.pyplot as plt
-
 def plot_final_scores_boxplot(final_score_history, player_labels=None, title="Final Score Distribution Over Games"):
     """
     Plots a boxplot of final scores for each player across multiple games.
@@ -512,3 +511,26 @@ def plot_winrate_heatmap(win_matrix, agents):
     plt.tight_layout()
     plt.show()
 
+def plot_scoregap_heatmap(score_gap_matrix, agents):
+    plt.figure(figsize=(8, 6))
+    ax = sns.heatmap(
+        score_gap_matrix,
+        annot=True,
+        fmt=".1f",
+        cmap="RdBu_r",  # diverging colormap: red = P0 loses, blue = P0 wins
+        center=0,       # zero score gap in the middle
+        xticklabels=agents,
+        yticklabels=agents,
+        annot_kws={"size": 12, "weight": "bold"},
+        linewidths=0.5,
+        linecolor='white'
+    )
+
+    ax.set_xlabel("Opponent", fontsize=14, weight="bold")
+    ax.set_ylabel("Player", fontsize=14, weight="bold")
+    ax.set_title("Average Score Gap (Rows vs Columns)", fontsize=16, weight="bold")
+
+    plt.xticks(rotation=45, ha="right", fontsize=12)
+    plt.yticks(rotation=0, fontsize=12)
+    plt.tight_layout()
+    plt.show()
