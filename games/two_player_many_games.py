@@ -19,24 +19,15 @@ from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 from actors import *
 from helper import *
 
-starttime = time.time()
-
 do_plot = True  # Toggle this to False to skip plotting and speed things up
-random.seed(1)
 board_size = 20
-
-game = CarcassonneGame(
-    players=2,
-    tile_sets=[TileSet.BASE],
-    supplementary_rules=[],
-    board_size=(board_size, board_size)
-)
-
-score_history = []
+agents = ["agent_random","agent_closest","agent_highscore"]
 player_labels = {
-    0: {"name": "agent_highscore", "color": "orange"},
-    1: {"name": "agent_closest  ", "color": "blue"}
+    0: {"name": agents[1], "color": "orange"},
+    1: {"name": agents[1], "color": "blue"}
 }
+
+final_score_history = []
 
 # Only prepare plotting if do_plot is True
 if do_plot:
@@ -46,9 +37,19 @@ if do_plot:
 else:
     fig, ax, writer, writer_context = None, None, None, contextlib.nullcontext()
 
-# Run game with optional plotting
-with writer_context:
+# Run games with optional plotting
+for i in range(10):
+    starttime = time.time()
+    random.seed(i)
     turn = 0
+    game = CarcassonneGame(
+        players=2,
+        tile_sets=[TileSet.BASE],
+        supplementary_rules=[],
+        board_size=(board_size, board_size)
+    )
+
+    score_history = []
     while not game.is_finished():
         turn += 1
 
@@ -58,9 +59,19 @@ with writer_context:
 
         # AI decisions
         if player == 0:
-            action = agent_highscore(valid_actions, game, 0)
+            if player_labels[player]["name"]=="agent_random":
+                action = agent_random(valid_actions)
+            if player_labels[player]["name"]=="agent_closest":
+                action = agent_closest(valid_actions, game)
+            if player_labels[player]["name"]=="agent_highscore":
+                action = agent_highscore(valid_actions, game, player)
         elif player == 1:
-            action = agent_closest(valid_actions, game)
+            if player_labels[player]["name"]=="agent_random":
+                action = agent_random(valid_actions)
+            if player_labels[player]["name"]=="agent_closest":
+                action = agent_closest(valid_actions, game)
+            if player_labels[player]["name"]=="agent_highscore":
+                action = agent_highscore(valid_actions, game, player)
 
         if action is not None:
             game.step(player, action)
@@ -70,17 +81,15 @@ with writer_context:
         state_vector = build_state_vector(game)
         score_history.append([state_vector[3], state_vector[4]])
 
-        # Plot only if enabled
-        if do_plot:
-            plot_carcassonne_board(board_array, state_vector, player_labels, ax=ax)
-            writer.grab_frame()
+    #print_state(game)
+    final_score_history.append(score_history)
 
-    print_state(game)
+    # Show last plot only if enabled
+    if do_plot:
+        plot_carcassonne_board(board_array, state_vector, player_labels, ax=None)
+        plot_score_history(score_history, player_labels)
 
-# Show animation only if enabled
-if do_plot:
-    display(Image(filename="carcassonne_game.gif"))
-    plot_score_history(score_history, player_labels)
-
-elaped = time.time() - starttime
-print(f'game took {elaped} [s]')
+    elaped = time.time() - starttime
+    print(f'game took {elaped} [s]')
+    
+plot_summary_results(final_score_history,player_labels)

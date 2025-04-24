@@ -15,7 +15,7 @@ from wingedsheep.carcassonne.objects.meeple_type import MeepleType
 from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryRule
 from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 
-def build_board_array(game,action):
+def build_board_array(game):
     
     # how to make array
     connection_region_dict = {
@@ -145,7 +145,7 @@ def add_meeples_to_tile_array(game,board_array,connection_region_dict):
             tile_layer = np.array(connection_region_dict[meeple_side]) * player_factor
             board_array[0,3*meeple_row:3*meeple_row+3,3*meeple_col:3*meeple_col+3] = tile_layer
 
-def build_state_vector(game,action):
+def build_state_vector(game):
     for p in range(game.players):
         if p==0: # TODO: make sure AI plays as p0
             meeples_inhand_mine = game.state.meeples[p]
@@ -234,8 +234,8 @@ def plot_carcassonne_board(board_array,state_vector,player_labels, ax=None):
     ax.imshow(rgb_image)
     
     # show meeples
-    ax.plot(mine_x, mine_y, marker='x', linestyle='None', color='yellow', markersize=5, markeredgewidth=2)
-    ax.plot(oppo_x, oppo_y, marker='x', linestyle='None', color='magenta', markersize=5, markeredgewidth=2)
+    ax.plot(mine_x, mine_y, marker='x', linestyle='None', color=player_labels[0]['color'], markersize=5, markeredgewidth=2)
+    ax.plot(oppo_x, oppo_y, marker='x', linestyle='None', color=player_labels[1]['color'], markersize=5, markeredgewidth=2)
     
     # add text for vector infos
     cards_left, meeples_0, meeples_1, score_0, score_1 = state_vector    # === Title (top center) ===
@@ -283,9 +283,8 @@ def print_state(game):
     }
 
     print(print_object)
-    
 
-def print_score_history(score_history,player_labels):
+def plot_score_history(score_history,player_labels):
     plt.figure(figsize=(8, 4))
     plt.plot(np.array(score_history)[:,0], label=player_labels[0]['name'], color=player_labels[0]['color'], linewidth=2)
     plt.plot(np.array(score_history)[:,1], label=player_labels[1]['name'], color=player_labels[1]['color'], linewidth=2)
@@ -296,3 +295,50 @@ def print_score_history(score_history,player_labels):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+    
+    # plot summary results
+def plot_summary_results(final_score_history,player_labels):
+    # Convert all score histories to a NumPy array for easier processing
+    # Shape: (num_games, num_turns, num_players)
+    # Since games may have different lengths, pad them
+    max_turns = max(len(game_scores) for game_scores in final_score_history)
+    num_players = len(final_score_history[0][0])
+
+    # Initialize with NaNs for padding
+    score_history_padded = np.full((len(final_score_history), max_turns, num_players), np.nan)
+
+    for i, game_scores in enumerate(final_score_history):
+        score_array = np.array(game_scores)
+        score_history_padded[i, :len(score_array), :] = score_array
+
+    # Normalize turns to percentage (0-100%)
+    turns_percentage = np.linspace(0, 100, max_turns)
+
+    # Calculate the mean score over time (across games)
+    mean_score_over_time = np.nanmean(score_history_padded, axis=0)
+
+    # Plot the mean scores over time (normalized to game %)
+    plt.figure(figsize=(10, 5))
+    for player_idx in range(num_players):
+        plt.plot(turns_percentage, mean_score_over_time[:, player_idx], label=player_labels[player_idx]["name"],
+                color=player_labels[player_idx]["color"])
+    plt.xlabel("Game Progress (%)")
+    plt.ylabel("Average Score")
+    plt.title("Average Score Over Time (Normalized to Game %)")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Extract final scores for boxplot (last score per game)
+    final_scores = np.array([game_scores[-1] for game_scores in final_score_history])
+
+    # Boxplot of final scores
+    plt.figure(figsize=(6, 5))
+    plt.boxplot(final_scores, labels=[player_labels[i]["name"] for i in range(num_players)])
+    plt.ylabel("Final Score")
+    plt.title("Final Scores Boxplot")
+    plt.grid(True, axis='y')
+    plt.tight_layout()
+    plt.show()
+
