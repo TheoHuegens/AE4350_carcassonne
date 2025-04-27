@@ -8,16 +8,10 @@ from scipy.ndimage import label
 from scipy.ndimage import convolve
 from collections import deque
 import seaborn as sns
+import copy
 
-from wingedsheep.carcassonne.carcassonne_game import CarcassonneGame
-from wingedsheep.carcassonne.carcassonne_game_state import CarcassonneGameState, GamePhase
-from wingedsheep.carcassonne.objects.actions.action import Action
-from wingedsheep.carcassonne.objects.actions.pass_action import PassAction
-from wingedsheep.carcassonne.objects.actions.tile_action import TileAction
-from wingedsheep.carcassonne.objects.actions.meeple_action import MeepleAction
-from wingedsheep.carcassonne.objects.meeple_type import MeepleType
-from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryRule
-from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
+from wingedsheep.carcassonne.utils.points_collector import *
+
 
 def construct_subtile_dict(do_norm=False):
 
@@ -279,19 +273,29 @@ def interpret_board_array(board_array,state_vector):
     
     return interpret_board_dict
 
-def estimate_potential_score(game):
-    state_vector = build_state_vector(game)
+def estimate_potential_score(game,method='object'):
+    
+    # do it by meeple end-game grab
+    # for some reason the copied game still impact all game objects
+    if method=='object':
+        game_endmove = copy.copy(game)
+        PointsCollector.count_final_scores(game_endmove.state)
+        scores=game_endmove.state.scores
+    
+    # do it via board interpreted form
+    elif method=='array':
+        state_vector = build_state_vector(game)
 
-    board_array_bool = build_board_array(game,do_norm=False)
-    board_array_vals = build_board_array(game,do_norm=True)
-    interpret_board_dict = interpret_board_array(board_array_bool,state_vector)
+        board_array_bool = build_board_array(game,do_norm=False)
+        board_array_vals = build_board_array(game,do_norm=True)
+        interpret_board_dict = interpret_board_array(board_array_bool,state_vector)
 
-    # layers 1=roads, 2=city, 3=abbeys
-    point_array = np.nansum( board_array_vals[1:4], axis=0 )
-    scores = []
-    for p in range(2):# for 2 players
-        point_array_p = point_array * interpret_board_dict[f"owned_mask_{p}"]
-        scores.append(np.sum(point_array_p))
+        # layers 1=roads, 2=city, 3=abbeys
+        point_array = np.nansum( board_array_vals[1:4], axis=0 )
+        scores = []
+        for p in range(2):# for 2 players
+            point_array_p = point_array * interpret_board_dict[f"owned_mask_{p}"]
+            scores.append(np.sum(point_array_p))
     
     return scores
     

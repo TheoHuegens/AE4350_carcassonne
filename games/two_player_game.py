@@ -116,8 +116,8 @@ if __name__ == '__main__':
     max_turn = 500
 
     # agents
-    p0='agent_user_input'
-    p1='agent_center'
+    p0='agent_score_potential_delta_gap'
+    p1='agent_score_potential_max_own'
 
     # initial vars
     starttime = time.time()

@@ -73,7 +73,7 @@ def agent_score_max_own(valid_actions,game,player=0):
 
 def agent_score_potential_max_own(valid_actions,game,player=0):
     
-    current_scores = scores = estimate_potential_score(game)
+    current_scores = estimate_potential_score(game)
     score_history = []
 
     for action in valid_actions:
@@ -101,7 +101,7 @@ def agent_score_potential_max_own(valid_actions,game,player=0):
 
 def agent_score_potential_max_gap(valid_actions,game,player=0):
     
-    current_scores = scores = estimate_potential_score(game)
+    current_scores = estimate_potential_score(game)
     score_history = []
 
     for action in valid_actions:
@@ -129,7 +129,7 @@ def agent_score_potential_max_gap(valid_actions,game,player=0):
 
 def agent_score_potential_delta_own(valid_actions,game,player=0):
     
-    current_scores = scores = estimate_potential_score(game)
+    current_scores = estimate_potential_score(game)
     score_history = []
 
     for action in valid_actions:
@@ -157,7 +157,7 @@ def agent_score_potential_delta_own(valid_actions,game,player=0):
 
 def agent_score_potential_delta_gap(valid_actions,game,player=0):
     
-    current_scores = scores = estimate_potential_score(game)
+    current_scores = estimate_potential_score(game)
     score_history = []
 
     for action in valid_actions:
