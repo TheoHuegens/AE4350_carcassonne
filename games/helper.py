@@ -9,9 +9,9 @@ from scipy.ndimage import convolve
 from collections import deque
 import seaborn as sns
 import copy
+import scipy.ndimage
 
 from wingedsheep.carcassonne.utils.points_collector import *
-
 
 def construct_subtile_dict(do_norm=False):
 
@@ -66,37 +66,34 @@ def construct_subtile_dict(do_norm=False):
         connection_region_dict = normalized_connection_region_dict
 
     return connection_region_dict
-    
-def build_board_array(game,do_norm=True):
-    
-    connection_region_dict=construct_subtile_dict(do_norm=do_norm)
-    
-    # go through board tiles and fill as needed
-    board_size = np.array(game.state.board).shape[0]
-    board_array = np.zeros((10,3*board_size,3*board_size))
-    board_array[:] = np.nan
-    for x in range(board_size):
-        for y in range(board_size):
-            tile = game.state.board[x][y]
+
+def build_board_array(game, do_norm=True):
+    connection_region_dict = construct_subtile_dict(do_norm=do_norm)
+
+    board = game.state.board
+    board_size = len(board)  # no need to np.array
+    board_array = np.full((4, 3 * board_size, 3 * board_size), np.nan, dtype=np.float32)  # one-liner fill NaNs
+
+    for x, row in enumerate(board):
+        for y, tile in enumerate(row):
             if tile is not None:
-                tile_array = build_tile_array(tile,game,x,y,connection_region_dict)
-                board_array[0:4,3*x:3*x+3,3*y:3*y+3] = tile_array
-    
-    # add meeples on their tile subposition based on coordinate with side
-    add_meeples_to_tile_array(game,board_array,connection_region_dict)
-    
+                tile_array = build_tile_array(tile, game, x, y, connection_region_dict)
+                sx, sy = 3 * x, 3 * y
+                board_array[:, sx:sx+3, sy:sy+3] = tile_array
+
+    add_meeples_to_tile_array(game, board_array, connection_region_dict)
     return board_array
 
 def build_tile_array(tile,game,x,y,connection_region_dict):
     
-    tile_array = np.zeros((1,3,3)) # 3x3 subgrid for each tile property
+    tile_array = np.zeros((4,3,3)) # 3x3 subgrid for each tile property
 
     # make road
     tile_layer = np.zeros((3,3))
     for i in range(len(tile.road)):
         connection = tile.road[i].a.value+tile.road[i].b.value # from a to b
         tile_layer += connection_region_dict[connection]
-    tile_array = np.append(tile_array,[tile_layer],axis=0)    
+    tile_array[1] +=tile_layer
     
     # make city
     tile_layer = np.zeros((3,3))
@@ -122,7 +119,7 @@ def build_tile_array(tile,game,x,y,connection_region_dict):
         # double values if shield is present
         if tile.shield:
             tile_layer += tile_layer
-    tile_array = np.append(tile_array,[tile_layer],axis=0)
+    tile_array[2] +=tile_layer
 
     # make abbey
     tile_layer = np.zeros((3,3))
@@ -138,7 +135,7 @@ def build_tile_array(tile,game,x,y,connection_region_dict):
 
     else:
         tile_layer = connection_region_dict['empty']
-    tile_array = np.append(tile_array,[tile_layer],axis=0)
+    tile_array[3] += tile_layer
 
     return tile_array
 
@@ -536,5 +533,161 @@ def plot_scoregap_heatmap(score_gap_matrix, agents):
 
     plt.xticks(rotation=45, ha="right", fontsize=12)
     plt.yticks(rotation=0, fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
+
+def compute_rewards(
+    score_history,
+    game_finished,
+    weights=(0.1, 1.0, 0.5, 10.0)
+):
+    """
+    Compute rewards for both players.
+
+    Args:
+        score_history: list of [score_p0, score_p1] after each turn
+        game_finished: bool, True if game finished
+        weights: tuple (w0, w1, w2, w3)
+
+    Returns:
+        rewards: list [reward_player0, reward_player1]
+        winner: int 0 or 1 or None (tie)
+    """
+
+    w0, w1, w2, w3 = weights
+
+    if len(score_history) < 2:
+        previous_scores = [0, 0]
+    else:
+        previous_scores = score_history[-2]
+    current_scores = score_history[-1]
+
+    rewards = [0.0, 0.0]
+
+    # Determine winner (only at end)
+    if game_finished:
+        if current_scores[0] > current_scores[1]:
+            winner = 0
+        elif current_scores[1] > current_scores[0]:
+            winner = 1
+        else:
+            winner = None
+    else:
+        winner = None
+
+    for player in [0, 1]:
+        opponent = 1 - player
+        current_score = current_scores[player]
+        score_diff = current_scores[player] - previous_scores[player]
+        score_gap = current_scores[player] - current_scores[opponent]
+
+        # Win/loss reward
+        if game_finished:
+            if winner is None:
+                game_result = 0.0
+            elif winner == player:
+                game_result = 1.0
+            else:
+                game_result = -1.0
+        else:
+            game_result = 0.0
+
+        reward = (w0 * current_score) + (w1 * score_diff) + (w2 * score_gap) + (w3 * game_result)
+        rewards[player] = reward
+
+    return rewards
+
+def plot_scores_and_rewards(score_history, reward_history, player0_name="Player 0", player1_name="Player 1"):
+    """
+    Plot scores and rewards over time.
+
+    Args:
+        score_history: list of (score_p0, score_p1) at each turn
+        reward_history: list of (reward_p0, reward_p1) at each turn
+        player0_name: str
+        player1_name: str
+    """
+    fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+
+    # --- Scores ---
+    axs[0].plot([s[0] for s in score_history], label=f"{player0_name} score", color='orange')
+    axs[0].plot([s[1] for s in score_history], label=f"{player1_name} score", color='blue')
+    axs[0].set_ylabel('Score')
+    axs[0].set_xlabel('Turn')
+    axs[0].set_title('Scores Over Time')
+    axs[0].legend()
+    axs[0].grid()
+
+    # --- Rewards ---
+    axs[1].plot([r[0] for r in reward_history], label=f"{player0_name} reward", color='orange')
+    axs[1].plot([r[1] for r in reward_history], label=f"{player1_name} reward", color='blue')
+    axs[1].set_ylabel('Reward')
+    axs[1].set_xlabel('Turn')
+    axs[1].set_title('Rewards Over Time')
+    axs[1].legend()
+    axs[1].grid()
+
+    plt.tight_layout()
+    plt.show()
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+def moving_average(x, window_size=10):
+    """Simple moving average for smoothing."""
+    x = np.array(x)
+    if len(x) < window_size:
+        return x  # too short
+    return np.convolve(x, np.ones(window_size) / window_size, mode='valid')
+
+def plot_training_progress(score_histories, reward_histories, player_labels, smoothing_window=10):
+    """
+    Plot training curves: end scores and end rewards over games.
+    
+    Args:
+        score_histories: list of [score0, score1] per game
+        reward_histories: list of [reward0, reward1] per game
+        player_labels: dict with {0: {name, color}, 1: {name, color}}
+        smoothing_window: int, moving average window size
+    """
+
+    N_games = len(score_histories)
+    
+    # Extract scores and rewards directly
+    final_scores_p0 = [scores[0] for scores in score_histories]
+    final_scores_p1 = [scores[1] for scores in score_histories]
+
+    final_rewards_p0 = [rewards[0] for rewards in reward_histories]
+    final_rewards_p1 = [rewards[1] for rewards in reward_histories]
+
+    fig, axs = plt.subplots(2, 1, figsize=(12, 10))
+
+    ## --- Plot final scores ---
+    axs[0].plot(final_scores_p0, label=f"{player_labels[0]['name']} score", color=player_labels[0]['color'], alpha=0.4)
+    axs[0].plot(final_scores_p1, label=f"{player_labels[1]['name']} score", color=player_labels[1]['color'], alpha=0.4)
+
+    axs[0].plot(moving_average(final_scores_p0, smoothing_window), color=player_labels[0]['color'], lw=2)
+    axs[0].plot(moving_average(final_scores_p1, smoothing_window), color=player_labels[1]['color'], lw=2)
+
+    axs[0].set_title("Final Score per Game")
+    axs[0].set_xlabel("Game")
+    axs[0].set_ylabel("Score")
+    axs[0].legend()
+    axs[0].grid(True)
+
+    ## --- Plot final rewards ---
+    axs[1].plot(final_rewards_p0, label=f"{player_labels[0]['name']} reward", color=player_labels[0]['color'], alpha=0.4)
+    axs[1].plot(final_rewards_p1, label=f"{player_labels[1]['name']} reward", color=player_labels[1]['color'], alpha=0.4)
+
+    axs[1].plot(moving_average(final_rewards_p0, smoothing_window), color=player_labels[0]['color'], lw=2)
+    axs[1].plot(moving_average(final_rewards_p1, smoothing_window), color=player_labels[1]['color'], lw=2)
+
+    axs[1].set_title("Final Reward per Game")
+    axs[1].set_xlabel("Game")
+    axs[1].set_ylabel("Reward")
+    axs[1].legend()
+    axs[1].grid(True)
+
     plt.tight_layout()
     plt.show()

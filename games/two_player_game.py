@@ -31,23 +31,18 @@ def two_player_game(
     do_convert,
     do_plot,
     player0_agent,
-    player1_agent
+    player1_agent,
+    gamma=0.99,
+    reward_weights=(0.1, 1.0, 0.5, 10.0),
+    record_rewards=True
 ):
     """
-    Simulate a Carcassonne game between two agent objects.
-
-    Args:
-        board_size: size of board
-        max_turn: maximum number of turns
-        do_convert: whether to create board arrays / state vectors
-        do_plot: whether to plot the board state
-        player0_agent: agent object for player 0
-        player1_agent: agent object for player 1
+    Simulate a Carcassonne game between two agents, and train RL agents.
 
     Returns:
         score_history: list of scores over time
+        rewards_history: list of (reward0, reward1) over time
     """
-    
     starttime = time.time()
 
     game = CarcassonneGame(
@@ -58,6 +53,10 @@ def two_player_game(
     )
 
     score_history = []
+    rewards_history = []
+    board_history = []
+    player_history = []
+
     player_labels = {
         0: {"name": player0_agent.name, "color": "orange"},
         1: {"name": player1_agent.name, "color": "blue"}
@@ -78,7 +77,7 @@ def two_player_game(
             player = game.get_current_player()
             valid_actions = game.get_possible_actions()
 
-            # Choose action using the respective agent
+            # Select action
             if player == 0:
                 action = player0_agent.select_action(valid_actions, game, player)
             else:
@@ -87,19 +86,57 @@ def two_player_game(
             if action is not None:
                 game.step(player, action)
 
-            # Collect game state
+            # Save board state
             if do_convert:
-                board_array = build_board_array(game, do_norm=False)
+                board_array = build_board_array(game, do_norm=True)
+                board_tensor = torch.tensor(board_array, dtype=torch.float32)
+                board_tensor = torch.nan_to_num(board_tensor, nan=0.0)
+                board_history.append(board_tensor)
+                player_history.append(player)
+
                 state_vector = build_state_vector(game)
-                score_history.append([state_vector[3], state_vector[4]])
                 interpret_board_dict = interpret_board_array(board_array, state_vector)
 
                 if do_plot:
                     plot_carcassonne_board(board_array, state_vector, player_labels, interpret_board_dict, ax=ax)
                     writer.grab_frame()
 
-            # Always record scores
+            # Record scores
             score_history.append(game.state.scores)
+
+            # --- Immediate reward computation ---
+            rewards = compute_rewards(
+                score_history,
+                game_finished=False,
+                weights=reward_weights
+            )
+            rewards_history.append(rewards)
+
+            # --- Immediate training ---
+            if isinstance(player0_agent, RLAgent):
+                player0_agent.train_step(board_tensor, target_score=rewards[0])
+            if isinstance(player1_agent, RLAgent):
+                player1_agent.train_step(board_tensor, target_score=rewards[1])
+
+    # --- After game finished: discounted training pass ---
+    T = len(board_history)
+    final_rewards = compute_rewards(score_history, game_finished=True, weights=reward_weights)
+
+    for t in range(T):
+        discount = gamma ** (T - t - 1)
+        board_tensor = board_history[t]
+        player = player_history[t]
+
+        if player == 0 and isinstance(player0_agent, RLAgent):
+            player0_agent.train_step(board_tensor, target_score=final_rewards[0] * discount)
+        if player == 1 and isinstance(player1_agent, RLAgent):
+            player1_agent.train_step(board_tensor, target_score=final_rewards[1] * discount)
+
+    # Save model at the end
+    if isinstance(player0_agent, RLAgent):
+        player0_agent.save_model()
+    if isinstance(player1_agent, RLAgent):
+        player1_agent.save_model()
 
     if do_plot:
         display(Image(filename="carcassonne_game.gif"))
@@ -108,8 +145,10 @@ def two_player_game(
     elapsed = time.time() - starttime
     print(f'Game took {elapsed:.2f} seconds')
 
-    return score_history
-
+    if record_rewards:
+        return score_history, rewards_history
+    else:
+        return score_history
 
 if __name__ == '__main__':
 
@@ -117,26 +156,24 @@ if __name__ == '__main__':
     do_plot = True
     do_convert = True
     do_norm = True
-    board_size = 20
+    board_size = 15
     max_turn = 500
 
     # agents
     # dictionary mapping names to Agent **classes**
     agent_classes = {
-        "random": RandomAgent(Agent),
-        #"center": CenterAgent,
-        "score_max_potential_own": AgentScoreMaxPotentialOwn(Agent),
-        #'agent_score_potential_max_own': AgentScoreMaxOwn(Agent),
-        #"score_potential_max_gap": ScorePotentialMaxGapAgent,
-        #"score_potential_delta_own": ScorePotentialDeltaOwnAgent,
-        #"score_potential_delta_gap": ScorePotentialDeltaGapAgent,
+        "random": RandomAgent(),
+        "center": AgentCenter(),
+        "score_max_potential_own": AgentScoreMaxPotentialOwn(),
+        'human': AgentUserInput(),
+        "RLAgent": RLAgent(),
     }
-    p0 = agent_classes["random"]
-    p1 = agent_classes["score_max_potential_own"]
+    player0_agent = agent_classes["center"]
+    player1_agent = agent_classes["RLAgent"]
 
     # initial vars
     starttime = time.time()
     random.seed(1)
     
     # run game
-    score_history = two_player_game(board_size,max_turn,do_convert,do_plot,p0,p1)
+    score_history = two_player_game(board_size,max_turn,do_convert,do_plot,player0_agent,player1_agent)

@@ -33,7 +33,7 @@ class RandomAgent(Agent):
 
 # === CENTRAL === #
 class AgentCenter(Agent):
-    def __init__(self, name: str = "RandomAgent"):
+    def __init__(self, name: str = "CentralAgent"):
         self.name = name
 
     def select_action(self, valid_actions, game, player):
@@ -82,8 +82,7 @@ class AgentScoreMaxPotentialOwn(Agent):
         action_scores = np.array(score_history)[:,player]
 
         # pick the best
-        action_index = np.argmax(action_scores)
-        action = valid_actions[action_index]
+        action = valid_actions[np.argmax(action_scores)]
         
         return action
     
@@ -97,36 +96,12 @@ class AgentUserInput(Agent):
         self.name = name
 
     def select_action(self, valid_actions, game, player):
-
-        fig, axes = plt.subplots(1, 2, figsize=(8, 4), squeeze=False)
-        axes = axes[0, :]  # flatten
-
-        # show initial board
         player_labels = {
             0: {"name": "Player 0", "color": "orange"},
             1: {"name": "Player 1", "color": "blue"}
         }
-        board_array = build_board_array(game, do_norm=False)
-        state_vector = build_state_vector(game)
-        interpret_board_dict = interpret_board_array(board_array, state_vector)
-        plot_carcassonne_board(board_array, state_vector, player_labels, interpret_board_dict, ax=axes[0])
 
-        # show tile (if Tile phase)
-        first_action = valid_actions[0]
-        if isinstance(first_action, TileAction):
-            tile = first_action.tile
-            connecting_region_dict = construct_subtile_dict(do_norm=False)
-            tile_array = build_tile_array(tile, game, 0, 0, connecting_region_dict)
-            interpret_tile_dict = interpret_board_array(tile_array, state_vector)
-            plot_carcassonne_board(tile_array, state_vector, player_labels, interpret_tile_dict, ax=axes[1])
-            fig.suptitle(f'Place tile: {tile.description}')
-        else:
-            fig.suptitle(f'Place Meeple')
-
-        plt.tight_layout()
-        plt.show()
-
-        # show all resulting boards
+        # show all boards resulting of each action
         n_actions = len(valid_actions)
         fig, axes = plt.subplots(n_actions, 1, figsize=(6, 4 * n_actions), squeeze=False)
         axes = axes[:, 0]
@@ -147,6 +122,31 @@ class AgentUserInput(Agent):
             else:
                 ax.axis("off")
                 ax.set_title(f"Action #{i} (None)", fontsize=10)
+
+        plt.tight_layout()
+        plt.show()
+
+        # show initial state (at the end because it will scroll there by default)
+        fig, axes = plt.subplots(1, 2, figsize=(8, 4), squeeze=False)
+        axes = axes[0, :]  # flatten
+
+        # show initial board
+        board_array = build_board_array(game, do_norm=False)
+        state_vector = build_state_vector(game)
+        interpret_board_dict = interpret_board_array(board_array, state_vector)
+        plot_carcassonne_board(board_array, state_vector, player_labels, interpret_board_dict, ax=axes[0])
+
+        # show tile (if Tile phase)
+        first_action = valid_actions[0]
+        if isinstance(first_action, TileAction):
+            tile = first_action.tile
+            connecting_region_dict = construct_subtile_dict(do_norm=False)
+            tile_array = build_tile_array(tile, game, 0, 0, connecting_region_dict)
+            interpret_tile_dict = interpret_board_array(tile_array, state_vector)
+            plot_carcassonne_board(tile_array, state_vector, player_labels, interpret_tile_dict, ax=axes[1])
+            fig.suptitle(f'Place tile: {tile.description}')
+        else:
+            fig.suptitle(f'Place Meeple')
 
         plt.tight_layout()
         plt.show()
