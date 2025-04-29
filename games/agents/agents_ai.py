@@ -19,12 +19,13 @@ from wingedsheep.carcassonne.objects.actions.meeple_action import MeepleAction
 # local imports
 from helper import *
 from agents.agent import Agent
+from actors import *
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class PolicyNet(nn.Module):
+class PolicyNet_CNN(nn.Module):
     def __init__(self, input_channels=4):
         super().__init__()
         
@@ -57,12 +58,36 @@ class PolicyNet(nn.Module):
         x = self.fc3(x)
         return x.squeeze(-1)
 
-class RLAgent_CNN:
+class PolicyNet(nn.Module):
+    def __init__(self, input_dim=12, hidden_dim=12, output_dim=1):
+        super().__init__()
+        
+        self.fc1 = nn.Linear(input_dim, 64)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Linear(64, 32)
+        self.relu2 = nn.ReLU()
+        self.fc3 = nn.Linear(32, 16)
+        self.relu3 = nn.ReLU()
+        self.fc4 = nn.Linear(16, output_dim)
+        self.softplus = nn.Softplus()  # ensures positive output
+
+    def forward(self, x):
+        out = self.fc1(x)
+        out = self.relu1(out)
+        out = self.fc2(out)
+        out = self.relu2(out)
+        out = self.fc3(out)
+        out = self.relu3(out)
+        out = self.fc4(out)
+        out = self.softplus(out)  # output constrained to be > 0
+        return out
+
+class RLAgent:
     def __init__(self, 
                  name="RLAgent",
                  policy_net=None,
-                 epsilon=0.005,
-                 critic_lr=1e-4,
+                 epsilon=0.1,
+                 critic_lr=5*1e-3,
                  save_interval=1,
                  model_path="policy_net.pth"):
         
@@ -72,7 +97,7 @@ class RLAgent_CNN:
         
         # initialise policy net
         if policy_net is None:
-            self.policy_net = PolicyNet(input_channels=4).to(self.device)
+            self.policy_net = PolicyNet().to(self.device)
             if self.model_path is not None and os.path.exists(self.model_path):
                 self.load_model()
             else:
@@ -96,19 +121,27 @@ class RLAgent_CNN:
         print(f"[INFO] Loaded model from {self.model_path}")
     
     def select_action(self, valid_actions, game, player):
+        #print(self.epsilon)
         # --- ε-greedy strategy ---
         if random.random() < self.epsilon:
             # RANDOM action
-            selected_action = random.choice(valid_actions)
+            #selected_action = random.choice(valid_actions)
+            # BEST HARDCODED action
+            selected_action = agent_score_max_own(valid_actions,game,player)
+            #selected_action = agent_score_potential_max_own(valid_actions,game,player)
+            #selected_action = agent_score_potential_delta_own(valid_actions,game,player)
+            #selected_action = agent_score_potential_max_gap(valid_actions,game,player)
+            #selected_action = agent_score_potential_delta_gap(valid_actions,game,player)
+
         # --- argmax(score) policy ---
         else:
-            # precompute the base board once
+            # precompute the tile arrays
             subtile_dict = construct_subtile_dict(do_norm=True)
             all_action_boards = []
             first_action_list = [] # track action associated with this move
 
             for idx, first_action in enumerate(valid_actions):
-                game_copy = copy.copy(game)
+                game_copy = copy.copy(game) # this takes time, TODO: make update_board_array(board_array,action) that adds the tile or meeple placed
                 game_copy.step(player, first_action)
                 
                 if isinstance(first_action, TileAction): # try all meeple placements on that tile - hard to see what's good otherwise
@@ -121,16 +154,20 @@ class RLAgent_CNN:
                         # i.e. we did 1=Tile then 2=Meeple
                         game_copy_copy = copy.copy(game_copy)
                         game_copy_copy.step(player, second_action)
-                        action_board_array = build_board_array(game_copy_copy, do_norm=True, connection_region_dict=subtile_dict)
+                        #action_board_array = build_board_array(game_copy_copy, do_norm=True, connection_region_dict=subtile_dict)
+                        action_vector_array = build_state_vector(game_copy_copy,subtile_dict)
                     else: 
                         #i.e. we did 1=Meeple
-                        action_board_array = build_board_array(game_copy, do_norm=True, connection_region_dict=subtile_dict)
-                    
+                        #action_board_array = build_board_array(game_copy, do_norm=True, connection_region_dict=subtile_dict)
+                        action_vector_array = build_state_vector(game_copy,subtile_dict)
+
                     # invert meeple layer based on player
-                    if player == 1:
-                        action_board_array[0] = -action_board_array[0]
                     
-                    all_action_boards.append(torch.tensor(action_board_array, dtype=torch.float32))
+                    if player == 0: action_vector_array.append(1)
+                    else:           action_vector_array.append(-1)
+                    #print(len(action_vector_array))
+                    #print(action_vector_array)
+                    all_action_boards.append(torch.tensor(action_vector_array, dtype=torch.float32))
                     first_action_list.append(first_action)  # link each board to its tile action
 
             # create batch
@@ -156,11 +193,8 @@ class RLAgent_CNN:
 
     def train_step(self, board_tensor, target_score, player):
         self.policy_net.train()
-
         board_tensor = torch.tensor(board_tensor, dtype=torch.float32).unsqueeze(0).to(self.device)
         board_tensor = torch.nan_to_num(board_tensor, nan=0.0)
-        if player == 1:
-            board_tensor[0] = -board_tensor[0]
             
         target_score = torch.tensor([target_score], dtype=torch.float32).to(self.device)
 

@@ -20,10 +20,9 @@ from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryR
 from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 # local imports
 from helper import *
-from agents.agent import Agent
+from helper_plotting import *
 from agents.agents_alogirthmic import *
 from agents.agents_ai import *
-from actors import *
 
 def two_player_game(
     board_size,
@@ -32,12 +31,20 @@ def two_player_game(
     do_plot,
     p0='RLAgent',
     p1='random',
-    gamma=0.95,
-    reward_weights=(0.1, 0.05, 0.01, 10.0),
+    gamma=0.0,
+    epsilon=0.99,
+    reward_weights=(1.0, 0.0, 0.0, 1.0),
     record_rewards=True,
     do_save=True
 ):
     # w0=score w1=increase w2=gap w3=final turn factor
+    
+    # to train on algorithmics, use  and
+    # score_max_own: (1.0, 0.0, 0.0, 1.0), gamma=0
+    # score_potential_max_own: (1.0, 0.0, 0.0, 1.0), gamma=0.95
+    # score_potential_max_gap: (0.0, 1.0, 0.0, 1.0), gamma=0.95
+    # score_potential_delta_own: (0.0, 0.0, 1.0, 1.0), gamma=0.95
+    # score_potential_delta_gap: (0.0, 0.5, 0.5, 1.0), gamma=0.95
     """
     Simulate a Carcassonne game between two agents, and train RL agents.
 
@@ -46,6 +53,7 @@ def two_player_game(
         rewards_history: list of (reward0, reward1) over time
     """
     starttime = time.time()
+    subtile_dict = construct_subtile_dict(do_norm=True)
 
     game = CarcassonneGame(
         players=2,
@@ -68,7 +76,9 @@ def two_player_game(
         "RLAgent": RLAgent(),
     }
     player0_agent=agent_classes[p0]
+    if isinstance(player0_agent,RLAgent): player0_agent.epsilon = epsilon
     player1_agent=agent_classes[p1]
+    if isinstance(player1_agent,RLAgent): player1_agent.epsilon = epsilon
 
     player_labels = {
         0: {"name": player0_agent.name, "color": "blue"},
@@ -106,16 +116,17 @@ def two_player_game(
                 #else:turn_history.append(1)
                 turn_history.append(1)
 
-                board_array = build_board_array(game, do_norm=True)
-                board_tensor = torch.tensor(board_array, dtype=torch.float32)
+                board_array = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
+                action_vector_array = build_state_vector(game,subtile_dict)
+                action_vector_array.append(1)# this can only be trained on p0 for now
+                interpret_board_dict = interpret_board_array(board_array)
+
+                board_tensor = torch.tensor(action_vector_array, dtype=torch.float32)
                 board_tensor = torch.nan_to_num(board_tensor, nan=0.0)
                 board_history.append(board_tensor)
 
-                state_vector = build_state_vector(game)
-                interpret_board_dict = interpret_board_array(board_array, state_vector)
-
                 if do_plot:
-                    plot_carcassonne_board(board_array, state_vector, player_labels, interpret_board_dict, ax=ax)
+                    plot_carcassonne_board(board_array, action_vector_array, player_labels, interpret_board_dict, ax=ax)
                     writer.grab_frame()
 
             # Record scores
@@ -152,7 +163,7 @@ def two_player_game(
         board_tensor = board_history[t]
         reward_cumul = R_cumul[t]
         loss=[0,0]
-        MIN_TURN_EVAL = 0 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
+        MIN_TURN_EVAL = 8 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
         if t>MIN_TURN_EVAL:
             if turn_history[t]==1: # i.e. Meeple turn
                 for player in range(2):
@@ -162,6 +173,8 @@ def two_player_game(
                         #print(player,reward_cumul[player])
                         loss_p = player0_agent.train_step(board_tensor, reward_cumul[player], player)
                     if player==1 and isinstance(player1_agent, RLAgent):
+                        board_tensor_inverted = board_tensor
+                        board_tensor_inverted[-1]=-1
                         loss_p = player1_agent.train_step(board_tensor, reward_cumul[player], player)
                     # assign losses to each player for inspection
                     if player==0: loss[0]=loss_p
@@ -188,10 +201,10 @@ if __name__ == '__main__':
 
     # initial vars
     starttime = time.time()
-    #random.seed(0)
+    random.seed(0)
     
     p0="RLAgent"
-    p1="center"
+    p1="random"
 
     # run game
     player_labels, score_history, rewards_history, rewards_cumul_history, losses = two_player_game(
@@ -203,7 +216,7 @@ if __name__ == '__main__':
         p1=p1,
         record_rewards=True,
         #reward_weights=(0.1, 0.1, 0.01, 10.0),
-        do_save=True # so we can tune learning rate and weights without messing up the model
+        do_save=False # so we can tune learning rate and weights without messing up the model
     )   
 
     plot_game_summary(player_labels,score_history,rewards_history,rewards_cumul_history,losses)

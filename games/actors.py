@@ -16,6 +16,7 @@ from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryR
 from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 
 from helper import *
+from helper_plotting import *
 
 def agent_random(valid_actions,game,player=0):
     # this plays at random
@@ -61,9 +62,7 @@ def agent_score_max_own(valid_actions,game,player=0):
             game_nextmove.step(player, action)
 
         # Collect game state
-        board_array = build_board_array(game_nextmove)
-        state_vector = build_state_vector(game_nextmove)
-        score_history.append([state_vector[3], state_vector[4]])
+        score_history.append([game_nextmove.state.scores[0], game_nextmove.state.scores[1]])
 
     score_mine = np.array(score_history)[:,player]
     action_index = np.argmax(score_mine)

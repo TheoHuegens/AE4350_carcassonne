@@ -20,10 +20,10 @@ from wingedsheep.carcassonne.tile_sets.supplementary_rules import SupplementaryR
 from wingedsheep.carcassonne.tile_sets.tile_sets import TileSet
 # local imports
 from helper import *
+from helper_plotting import *
 from agents.agent import Agent
 from agents.agents_alogirthmic import *
 from agents.agents_ai import *
-from actors import *
 from two_player_game import two_player_game
 
 # --- New wrapper: Play many games ---
@@ -52,7 +52,8 @@ def play_multiple_games(
             do_plot=do_plot,
             p0=player0_agent,
             p1=player1_agent,
-            do_save=True
+            do_save=True,
+            epsilon=compute_turn_epislon(game_idx)
         )
 
         # Save final scores
@@ -78,10 +79,10 @@ def play_multiple_games(
 # Run N games
 if __name__ == '__main__':
     p0 = "RLAgent"
-    p1 = "center"
+    p1 = "random"
 
     # train over N games
-    N_games = 1000
+    N_games = 100
     score_histories, reward_histories, rewards_cumul_history = play_multiple_games(
         N_games,
         board_size=15,
@@ -89,7 +90,7 @@ if __name__ == '__main__':
         do_convert=True,
         do_plot=False,
         player0_agent=p0,
-        player1_agent=p1,
+        player1_agent=p1
     )
 
     # and look at the results
