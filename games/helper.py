@@ -67,8 +67,9 @@ def construct_subtile_dict(do_norm=False):
 
     return connection_region_dict
 
-def build_board_array(game, do_norm=True):
-    connection_region_dict = construct_subtile_dict(do_norm=do_norm)
+def build_board_array(game, do_norm=True, connection_region_dict=None):
+    if connection_region_dict is None:
+        connection_region_dict = construct_subtile_dict(do_norm=do_norm)
 
     board = game.state.board
     board_size = len(board)  # no need to np.array
@@ -146,7 +147,7 @@ def add_meeples_to_tile_array(game,board_array,connection_region_dict):
             meeple_placed = game.state.placed_meeples[p][m] # m th meeple of player p
             
             # TODO: ensure own player is in same layer regarless of p,m 
-            if p ==0:   player_factor = +1 # own meeples
+            if p == 0:  player_factor = +1 # own meeples
             else:       player_factor = -1 # opponent(s)'
             
             # extract info
@@ -394,13 +395,13 @@ def print_state(game):
 
     print(print_object)
 
-def plot_score_history(score_history,player_labels):
+def plot_score_history(score_history,player_labels,label='Score'):
     plt.figure(figsize=(8, 4))
     plt.plot(np.array(score_history)[:,0], label=player_labels[0]['name'], color=player_labels[0]['color'], linewidth=2)
     plt.plot(np.array(score_history)[:,1], label=player_labels[1]['name'], color=player_labels[1]['color'], linewidth=2)
-    plt.title("Score Progression Over Game")
+    plt.title(f"{label} Progression Over Game")
     plt.xlabel("Turn")
-    plt.ylabel("Score")
+    plt.ylabel(label)
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -540,8 +541,9 @@ def plot_scoregap_heatmap(score_gap_matrix, agents):
 def compute_rewards(
     score_history,
     game_finished,
-    weights=(0.1, 1.0, 0.5, 10.0)
+    weights=(0.01, 0.05, 0.1, 2.0)
 ):
+    # w0=score w1=increase w2=gap w3=win
     """
     Compute rewards for both players.
 
@@ -556,6 +558,12 @@ def compute_rewards(
     """
 
     w0, w1, w2, w3 = weights
+    turn = len(score_history)
+    max_turn = 144 # for current tile deck
+    if game_finished:
+        turn_correction_factor = w3#/(max_turn-turn+1)
+    else:
+        turn_correction_factor = 1
 
     if len(score_history) < 2:
         previous_scores = [0, 0]
@@ -583,6 +591,7 @@ def compute_rewards(
         score_gap = current_scores[player] - current_scores[opponent]
 
         # Win/loss reward
+        """
         if game_finished:
             if winner is None:
                 game_result = 0.0
@@ -592,9 +601,11 @@ def compute_rewards(
                 game_result = -1.0
         else:
             game_result = 0.0
+        """
+        game_result = 0.0 # dont use this anymore
 
         reward = (w0 * current_score) + (w1 * score_diff) + (w2 * score_gap) + (w3 * game_result)
-        rewards[player] = reward
+        rewards[player] = reward*turn_correction_factor/100
 
     return rewards
 
@@ -641,7 +652,7 @@ def moving_average(x, window_size=10):
         return x  # too short
     return np.convolve(x, np.ones(window_size) / window_size, mode='valid')
 
-def plot_training_progress(score_histories, reward_histories, player_labels, smoothing_window=10):
+def plot_training_progress(score_histories, reward_histories, player_labels, smoothing_window=5):
     """
     Plot training curves: end scores and end rewards over games.
     
@@ -691,3 +702,9 @@ def plot_training_progress(score_histories, reward_histories, player_labels, smo
 
     plt.tight_layout()
     plt.show()
+
+def plot_game_summary(player_labels,score_history,rewards_history,rewards_cumul_history,losses):
+    plot_score_history(score_history, player_labels,label='Score')
+    plot_score_history(rewards_history, player_labels,label='Reward')
+    plot_score_history(rewards_cumul_history, player_labels,label='Cumulative Reward')
+    plot_score_history(losses, player_labels,label='Loss')

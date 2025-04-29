@@ -32,26 +32,27 @@ def play_multiple_games(
     board_size,
     max_turn,
     do_convert,
-    do_plot_each,
+    do_plot,
     player0_agent,
-    player1_agent
+    player1_agent,
 ):
     score_histories = []
     reward_histories = []
+    reward_cumul_histories = []
 
     for game_idx in range(N_games):
         print(f"\n--- Playing Game {game_idx+1}/{N_games} ---")
         random.seed(game_idx) # ensures reproducibility
         #random.seed(0) # can look at improvements better but worse for overall training -- testing only --
 
-        score_history, rewards_history = two_player_game(
+        player_labels, score_history, rewards_history, rewards_cumul_history, losses = two_player_game(
             board_size=board_size,
             max_turn=max_turn,
-            do_convert=do_convert,
-            do_plot=do_plot_each,
-            player0_agent=player0_agent,
-            player1_agent=player1_agent,
-            record_rewards=True
+            do_convert=True,
+            do_plot=do_plot,
+            p0=player0_agent,
+            p1=player1_agent,
+            do_save=True
         )
 
         # Save final scores
@@ -61,48 +62,39 @@ def play_multiple_games(
         # Save final rewards
         final_reward = rewards_history[-1]
         reward_histories.append(final_reward)
-
+        
+        # Save final cumulative rewards
+        final_cumul_reward = rewards_cumul_history[-1]
+        reward_cumul_histories.append(final_cumul_reward)
+    
+        if do_plot:
+            plot_game_summary(player_labels,score_history,rewards_history,rewards_cumul_history,losses)
     score_histories = np.array(score_histories)  # shape (N_games, 2)
     reward_histories = np.array(reward_histories)  # shape (N_games, 2)
+    rewards_cumul_history = np.array(reward_cumul_histories)
 
-    return score_histories, reward_histories
+    return score_histories, reward_histories, rewards_cumul_history
 
 # Run N games
 if __name__ == '__main__':
-    # choose which of the possible agent that can play the game
-    agent_classes = {
-        "random": RandomAgent(),
-        "center": AgentCenter(),
-        "score_max_potential_own": AgentScoreMaxPotentialOwn(),
-        'human': AgentUserInput(),
-        "RLAgent": RLAgent(),
-    }
-    player0_agent=agent_classes["center"]
-    player1_agent=agent_classes["RLAgent"]
-    
-    # setup training for both agents to use the same network
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    shared_policy_net = PolicyNet(input_channels=4).to(device)
-    if isinstance(player0_agent, RLAgent):
-        player0_agent = RLAgent(policy_net=shared_policy_net, model_path="shared_policy_net.pth")
-    if isinstance(player1_agent, RLAgent):
-        player1_agent = RLAgent(policy_net=shared_policy_net, model_path="shared_policy_net.pth")
+    p0 = "RLAgent"
+    p1 = "center"
 
     # train over N games
-    N_games = 10
-    score_histories, reward_histories = play_multiple_games(
+    N_games = 1000
+    score_histories, reward_histories, rewards_cumul_history = play_multiple_games(
         N_games,
         board_size=15,
-        max_turn=50,
+        max_turn=500,
         do_convert=True,
-        do_plot_each=False,
-        player0_agent=player0_agent,
-        player1_agent=player1_agent,
+        do_plot=False,
+        player0_agent=p0,
+        player1_agent=p1,
     )
 
     # and look at the results
     plot_training_progress(score_histories, reward_histories, player_labels={
-        0: {"name": "Center", "color": "orange"},
-        1: {"name": "RLAgent", "color": "blue"},
+        0: {"name": p0, "color": "blue"},
+        1: {"name": p1, "color": "orange"},
     })
 

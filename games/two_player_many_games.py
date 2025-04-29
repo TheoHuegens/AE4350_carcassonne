@@ -47,13 +47,14 @@ def run_matchup(args):
         random.seed(game_seed)
         score_history = two_player_game(board_size, max_turn, do_convert, False, p0_agent, p1_agent)
 
-        final_score = score_history[-1]
-        score_gap_matrix[agents_to_test.index(p0_name), agents_to_test.index(p1_name)] += final_score[0] - final_score[1]
+        final_score = score_history[-1]  # [p0_score, p1_score]
+        p0_final, p1_final = final_score[0], final_score[1]
+        score_gap_matrix[agents_to_test.index(p0_name), agents_to_test.index(p1_name)] += p0_final - p1_final
 
-        if final_score[0] > final_score[1]:
+        if p0_final > p1_final:
             win_counts_matrix[agents_to_test.index(p0_name), agents_to_test.index(p1_name)] += 1
-        elif final_score[0] == final_score[1]:
-            win_counts_matrix[agents_to_test.index(p0_name), agents_to_test.index(p1_name)] += 0.5  # count draws as half
+        elif p0_final == p1_final:
+            win_counts_matrix[agents_to_test.index(p0_name), agents_to_test.index(p1_name)] += 0.5
 
     return win_counts_matrix, score_gap_matrix
 

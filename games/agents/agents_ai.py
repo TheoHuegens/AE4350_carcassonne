@@ -42,52 +42,49 @@ class PolicyNet(nn.Module):
 
     def forward(self, board_batch):
         x = board_batch
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
+        x = F.sigmoid(self.conv1(x))
+        x = F.sigmoid(self.conv2(x))
         x = self.mp1(x)
 
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
+        x = F.sigmoid(self.conv3(x))
+        x = F.sigmoid(self.conv4(x))
         x = self.global_pool(x)
 
         x = x.view(x.size(0), -1)
 
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.sigmoid(self.fc1(x))
+        x = F.sigmoid(self.fc2(x))
         x = self.fc3(x)
         return x.squeeze(-1)
 
-class RLAgent:
+class RLAgent_CNN:
     def __init__(self, 
                  name="RLAgent",
                  policy_net=None,
-                 alpha=0.1,
-                 gamma=0.9,
-                 epsilon=0.1,
-                 critic_lr=0.01,
+                 epsilon=0.005,
+                 critic_lr=1e-4,
                  save_interval=1,
                  model_path="policy_net.pth"):
         
         self.name = name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+        self.model_path = model_path
+        
+        # initialise policy net
         if policy_net is None:
             self.policy_net = PolicyNet(input_channels=4).to(self.device)
-        else:
-            self.policy_net = policy_net.to(self.device)
+            if self.model_path is not None and os.path.exists(self.model_path):
+                self.load_model()
+            else:
+                print(f"[INFO] No model found at {self.model_path}, starting fresh.")        
+        self.policy_net = self.policy_net.to(self.device)
+        self.policy_net.eval()
 
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=critic_lr)
         self.loss_fn = nn.MSELoss()
         self.model_path = model_path
-        self.alpha = alpha
-        self.gamma = gamma
         self.epsilon = epsilon
         self.save_interval = save_interval
-
-        # Load model if it exists
-        if os.path.exists(self.model_path):
-            self.load_model()
-            print(f"[INFO] Loaded model from {self.model_path}")
 
     def save_model(self):
         torch.save(self.policy_net.state_dict(), self.model_path)
@@ -95,49 +92,76 @@ class RLAgent:
 
     def load_model(self):
         self.policy_net.load_state_dict(torch.load(self.model_path, map_location=self.device))
-        self.policy_net.eval()  # Set to evaluation mode by default when loading
+        #self.policy_net.eval()  # Set model to evaluation mode
+        print(f"[INFO] Loaded model from {self.model_path}")
     
     def select_action(self, valid_actions, game, player):
-        current_board = build_board_array(game, do_norm=True)
-
-        all_action_boards = []
-        valid_indices = []
-        
-        for idx, action in enumerate(valid_actions):
-            if action is not None:
-                game_copy = copy.copy(game)
-                game_copy.step(player, action)
-                new_board = build_board_array(game_copy, do_norm=True)
-                all_action_boards.append(torch.tensor(new_board, dtype=torch.float32))
-                valid_indices.append(idx)
-
-        if len(all_action_boards) == 0:
-            return None
-
-        board_batch = torch.stack(all_action_boards).to(self.device)
-        board_batch = torch.nan_to_num(board_batch, nan=0.0)
-
         # --- ε-greedy strategy ---
         if random.random() < self.epsilon:
             # RANDOM action
-            random_idx = random.choice(valid_indices)
-            selected_action = valid_actions[random_idx]
-            return selected_action
+            selected_action = random.choice(valid_actions)
+        # --- argmax(score) policy ---
         else:
+            # precompute the base board once
+            subtile_dict = construct_subtile_dict(do_norm=True)
+            all_action_boards = []
+            first_action_list = [] # track action associated with this move
+
+            for idx, first_action in enumerate(valid_actions):
+                game_copy = copy.copy(game)
+                game_copy.step(player, first_action)
+                
+                if isinstance(first_action, TileAction): # try all meeple placements on that tile - hard to see what's good otherwise
+                    valid_second_actions = game_copy.get_possible_actions()
+                else:
+                    valid_second_actions = [None] # No secondary action
+
+                for second_action in valid_second_actions:
+                    if second_action is not None: 
+                        # i.e. we did 1=Tile then 2=Meeple
+                        game_copy_copy = copy.copy(game_copy)
+                        game_copy_copy.step(player, second_action)
+                        action_board_array = build_board_array(game_copy_copy, do_norm=True, connection_region_dict=subtile_dict)
+                    else: 
+                        #i.e. we did 1=Meeple
+                        action_board_array = build_board_array(game_copy, do_norm=True, connection_region_dict=subtile_dict)
+                    
+                    # invert meeple layer based on player
+                    if player == 1:
+                        action_board_array[0] = -action_board_array[0]
+                    
+                    all_action_boards.append(torch.tensor(action_board_array, dtype=torch.float32))
+                    first_action_list.append(first_action)  # link each board to its tile action
+
+            # create batch
+            board_batch = torch.stack(all_action_boards).to(self.device)
+            board_batch = torch.nan_to_num(board_batch, nan=0.0)
             # GREEDY action
             with torch.no_grad():
                 action_scores = self.policy_net(board_batch)
+                action_scores = action_scores.detach().cpu().numpy()
 
-            best_idx = valid_indices[torch.argmax(action_scores).item()]
-            selected_action = valid_actions[best_idx]
-            return selected_action
+            # Find index of best board
+            best_idx = np.argmax(action_scores)
+            
+            ### === debug === ###
+            #plt.plot(action_scores)
+            #plt.show()
+            #print(f'best action is #{best_idx} with score {action_scores[best_idx]}')
+            
+            # From tile_action_list, pick the corresponding tile action
+            selected_action = first_action_list[best_idx]
+            
+        return selected_action
 
-    def train_step(self, board_tensor, target_score):
+    def train_step(self, board_tensor, target_score, player):
         self.policy_net.train()
 
         board_tensor = torch.tensor(board_tensor, dtype=torch.float32).unsqueeze(0).to(self.device)
         board_tensor = torch.nan_to_num(board_tensor, nan=0.0)
-
+        if player == 1:
+            board_tensor[0] = -board_tensor[0]
+            
         target_score = torch.tensor([target_score], dtype=torch.float32).to(self.device)
 
         predicted_score = self.policy_net(board_tensor)
@@ -147,14 +171,16 @@ class RLAgent:
         self.optimizer.zero_grad()
         
         """
-        print("Target score:", target_score[0])
-        print("predicted_score:", predicted_score[0])
+        print("Target score:", target_score)
+        print("predicted_score:", predicted_score)
+        print("predicted_score:", loss)
         """
         if torch.isnan(loss):
             print("Loss is NaN, aborting step")
             return
     
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
         self.optimizer.step()
         
         return loss.item()
