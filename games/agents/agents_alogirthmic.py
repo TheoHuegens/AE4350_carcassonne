@@ -14,6 +14,7 @@ from wingedsheep.carcassonne.objects.actions.meeple_action import MeepleAction
 
 # local imports
 from helper import *
+from helper_plotting import *
 from agents.agent import Agent
 
 # === RANDOM === #

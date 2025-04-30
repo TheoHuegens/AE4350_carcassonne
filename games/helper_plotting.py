@@ -10,6 +10,9 @@ from collections import deque
 import seaborn as sns
 import copy
 import scipy.ndimage
+import torch
+import torch.nn as nn
+
 
 from wingedsheep.carcassonne.utils.points_collector import *
 
@@ -45,9 +48,6 @@ def plot_scores_and_rewards(score_history, reward_history, player0_name="Player 
 
     plt.tight_layout()
     plt.show()
-
-import numpy as np
-import matplotlib.pyplot as plt
 
 def moving_average(x, window_size=10):
     """Simple moving average for smoothing."""
@@ -256,7 +256,7 @@ def plot_scoregap_heatmap(score_gap_matrix, agents):
     plt.tight_layout()
     plt.show()
 
-def plot_carcassonne_board(board_array,state_vector,player_labels, interpret_board_dict, ax=None):
+def plot_carcassonne_board(board_array,state_dict,player_labels, interpret_board_dict, ax=None):
     # initialize plot
     if ax is None:
         fig, ax = plt.subplots()
@@ -310,11 +310,11 @@ def plot_carcassonne_board(board_array,state_vector,player_labels, interpret_boa
     ax.plot(oppo_x, oppo_y, marker='x', linestyle='None', color=player_labels[1]['color'], markersize=5, markeredgewidth=2,zorder=6)
     
     # add text for vector infos
-    cards_left = state_vector[0]
-    score_0 = state_vector[1]
-    meeples_0 = state_vector[2]
-    score_1 = state_vector[6]
-    meeples_1 = state_vector[7]
+    cards_left = state_dict["tiles_left_in_drawpile"]
+    score_0 = state_dict["p0_score"]
+    meeples_0 = state_dict["p0_meeple_in_hand"]
+    score_1 =state_dict["p1_score"]
+    meeples_1 = state_dict["p1_meeple_in_hand"]
     
     ax.set_title(f"Turns Left: {cards_left}", fontsize=12, weight='bold')
 
@@ -335,4 +335,115 @@ def plot_carcassonne_board(board_array,state_vector,player_labels, interpret_boa
 
     ax.axis("off")
     return ax
-    
+
+def plot_network(model, input_data=None, output_label="t",
+                 layer_spacing=1.5, neuron_spacing=0.5, neuron_size=0.2, weight_threshold=0.01):
+    """
+    Visualize a feedforward PyTorch model with labeled neurons, colored activations, 
+    weight signs, biases, and connection legend.
+
+    Args:
+        model (nn.Module): The neural network model.
+        input_data (dict or None): If provided, dict keys used as input labels.
+        output_label (str): Label for the output neuron.
+    """
+
+    # Map activations to colors
+    act_color_map = {
+        "Sigmoid": "#66ccff",
+        "ReLU": "#66ff66",
+        "Tanh": "#b266ff",
+        "Softplus": "#ffcc66",
+        "Linear": "#ffffff",
+        "Input": "#add8e6"
+    }
+
+    # Extract model structure
+    input_dim = next(m.in_features for m in model.modules() if isinstance(m, nn.Linear))
+    input_labels = list(input_data.keys()) if input_data else [f"x{i}" for i in range(input_dim)]
+
+    layers = [input_dim]
+    weights, biases, activations = [], [], []
+
+    for m in model.children():
+        if isinstance(m, nn.Linear):
+            layers.append(m.out_features)
+            weights.append(m.weight.detach().cpu().numpy())
+            biases.append(m.bias.detach().cpu().numpy())
+        elif isinstance(m, (nn.ReLU, nn.Sigmoid, nn.Tanh, nn.Softplus)):
+            activations.append(m.__class__.__name__)
+
+    # Layout
+    fig, ax = plt.subplots(figsize=(layer_spacing * len(layers), neuron_spacing * max(layers) * 1.05))
+    neuron_positions = []
+
+    for i, layer_size in enumerate(layers):
+        x = i * layer_spacing
+        y_offset = (layer_size - 1) * neuron_spacing / 2
+        layer_positions = []
+
+        # Neuron color
+        if i == 0:
+            color = act_color_map["Input"]
+        elif i == len(layers) - 1:
+            color = act_color_map["Linear"]
+        else:
+            if i - 1 < len(activations):
+                act_name = activations[i - 1]
+            else:
+                act_name = "linear"
+                color = act_color_map.get(act_name, "#dddddd")
+
+        for j in range(layer_size):
+            y = -j * neuron_spacing + y_offset  # Reversed: top to bottom
+            ax.add_patch(plt.Circle((x, y), neuron_size, color=color, ec='black', zorder=2))
+
+            # Labels
+            if i == 0:
+                label = input_labels[j] if j < len(input_labels) else f"x{j}"
+                ax.text(x - 0.4, y, label, va='center', ha='right', fontsize=9)
+            elif i == len(layers) - 1:
+                ax.text(x + 0.4, y, output_label, va='center', ha='left', fontsize=10)
+            else:
+                ax.text(x, y + 0.35, f"h{i}_{j}", va='bottom', ha='center', fontsize=8)
+
+            # Bias annotation
+            if i > 0:
+                b_val = biases[i - 1][j]
+                ax.text(x, y - 0.35, f"b={b_val:.2f}", va='top', ha='center', fontsize=7, color='gray')
+
+            layer_positions.append((x, y))
+        neuron_positions.append(layer_positions)
+
+    # Draw connections
+    for l in range(len(weights)):
+        w = weights[l]
+        for i, (x1, y1) in enumerate(neuron_positions[l]):
+            for j, (x2, y2) in enumerate(neuron_positions[l + 1]):
+                weight = w[j, i]
+                if abs(weight) > weight_threshold:
+                    color = 'red' if weight < 0 else 'blue'
+                    linewidth = 0.5 + 2 * min(1, abs(weight))
+                    ax.plot([x1, x2], [y1, y2], color=color, lw=linewidth, alpha=0.6, zorder=1)
+
+    # Title and legend
+    plt.title("Neural Network Architecture", fontsize=14, pad=20)
+    ax.axis('equal')
+    ax.axis('off')
+
+    # Legend
+    red_line = mpatches.Patch(color='red', label='Negative Weight')
+    blue_line = mpatches.Patch(color='blue', label='Positive Weight')
+    legend_elements = [red_line, blue_line]
+
+    for act, col in act_color_map.items():
+        patch = mpatches.Patch(color=col, label=f"{act} Neuron")
+        legend_elements.append(patch)
+
+    ax.legend(handles=legend_elements, loc='upper center',
+              bbox_to_anchor=(0.5, -0.07), ncol=3, fontsize=8)
+
+    plt.tight_layout()
+    #plt.show()
+
+    return fig,ax

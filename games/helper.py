@@ -159,6 +159,12 @@ def add_meeples_to_tile_array(game,board_array,connection_region_dict):
             tile_layer = np.array(connection_region_dict[meeple_side]) * player_factor
             board_array[0,3*meeple_row:3*meeple_row+3,3*meeple_col:3*meeple_col+3] = tile_layer
 
+def update_board_array(board_array,action):
+    # adds the tile on board
+    
+    # adds the meeple on board
+    pass
+
 def build_state_vector(game,subtile_dict):
     # grab and format information
     board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
@@ -180,29 +186,33 @@ def build_state_vector(game,subtile_dict):
     """
     
     # game progress
-    game_vector = {
+    state_dict = {
         'tiles_left_in_drawpile': len(game.state.deck)
     }
     
     # player attributes and status
     for p in range(game.players):
-        if p==0: factor=+1#0th player is default me
-        else:   factor =-1
-        player_vector = {
-            'p{p}_score':               factor*float(game.state.scores[p]),
-            'p{p}_meeple_in_hand':      factor*float(game.state.meeples[p]),
-            'p{p}_road_meeple':         factor*float(np.sum(board_masks['road_mask'] &   board_masks[f'meeples_mask_{p}'])), # meeples on a road
-            'p{p}_road_tiles':          factor*float(np.nansum(board_array_normed[1] *   board_masks[f'owned_mask_{p}'])), # all connected roads (excl. intersection) that overlap with the owned region, weighed
-            'p{p}_road_ends':           factor*float(0), # TBD
-            'p{p}_city_meeple':         factor*float(np.sum(board_masks['city_mask'] &   board_masks[f'meeples_mask_{p}'])),
-            'p{p}_city_tiles':          factor*float(np.nansum(board_array_normed[2] *   board_masks[f'owned_mask_{p}'])), # all connected cities that overlap with the owned region, weighed
-            'p{p}_city_ends':           factor*float(0), # TBD
-            'p{p}_abbeys':              factor*float(np.sum(board_masks['abbey_mask'] &  board_masks[f'meeples_mask_{p}'])),
-            'p{p}_abbey_neighbours':    factor*float(np.nansum(board_array_normed[3] *   board_masks[f'owned_mask_{p}'])) # weighed on 0-1 or 8 per abbey
+        #if p==0: factor=+1#0th player is default me
+        #else:   factor =-1
+        factor=1
+        player_dict = {
+            f'p{p}_score':               factor*float(game.state.scores[p]),
+            f'p{p}_meeple_in_hand':      factor*float(game.state.meeples[p]),
+            f'p{p}_road_meeple':         factor*float(np.sum(board_masks['road_mask'] &   board_masks[f'meeples_mask_{p}'])), # meeples on a road
+            f'p{p}_road_tiles':          factor*float(np.nansum(board_array_normed[1] *   board_masks[f'owned_mask_{p}'])), # all connected roads (excl. intersection) that overlap with the owned region, weighed
+            f'p{p}_road_ends':           factor*float(0), # TBD
+            f'p{p}_city_meeple':         factor*float(np.sum(board_masks['city_mask'] &   board_masks[f'meeples_mask_{p}'])),
+            f'p{p}_city_tiles':          factor*float(np.nansum(board_array_normed[2] *   board_masks[f'owned_mask_{p}'])), # all connected cities that overlap with the owned region, weighed
+            f'p{p}_city_ends':           factor*float(0), # TBD
+            f'p{p}_abbeys':              factor*float(np.sum(board_masks['abbey_mask'] &  board_masks[f'meeples_mask_{p}'])),
+            f'p{p}_abbey_neighbours':    factor*float(np.nansum(board_array_normed[3] *   board_masks[f'owned_mask_{p}'])) # weighed on 0-1 or 8 per abbey
         }
+        state_dict.update(player_dict)
     
-    state_vector = list(game_vector.values())+list(player_vector.values())
-    return state_vector
+    state_vector = list(state_dict.values())
+    #print(len(state_vector))
+    
+    return state_vector, state_dict
 
 def find_contiguous_area(target_x, target_y, arr):
     """
@@ -303,7 +313,7 @@ def estimate_potential_score(game,method='object'):
     
     # do it via board interpreted form
     elif method=='array':
-        state_vector = build_state_vector(game)
+        state_vector,state_dict = build_state_vector(game)
 
         board_array_bool = build_board_array(game,do_norm=False)
         board_array_vals = build_board_array(game,do_norm=True)
@@ -385,17 +395,66 @@ def compute_rewards(
         game_result = 0.0 # dont use this anymore
 
         reward = (w0 * current_score) + (w1 * score_diff) + (w2 * score_gap) + (w3 * game_result)
-        rewards[player] = reward*turn_correction_factor/100
+        rewards[player] = reward*turn_correction_factor#/100
 
     return rewards
 
-def compute_turn_epislon(game_idx):
+def training_plan(game_idx):
+    game_gap = 10
+    policy_algo_init=None
     
-    gaps = 20 # games
-    
-    epsilon=0.99
-    if game_idx>1*gaps: epsilon=0.9
-    if game_idx>2*gaps: epsilon=0.75
-    if game_idx>3*gaps: epsilon=0.5
-    if game_idx>4*gaps: epsilon=0.1
-    return epsilon
+    # initially just try to match increase score default with lots of exploration
+    param_dict={
+        'policy_algo_init':policy_algo_init,
+        'epsilon':0.5, # % random moves for exploration
+        'gamma':0.0, # discount rate, high=future rewards matter
+        'reward_weights':(1.0, 0.0, 0.0, 0.0)    
+        # w0=score w1=increase w2=gap w3=final turn factor
+    }
+    # step 1: settle exploration and match score max
+    if 1*game_gap > game_idx:
+        param_dict={
+            'policy_algo_init':policy_algo_init,
+            'epsilon':0.1, # % random moves for exploration
+            'gamma':0.0, # discount rate, high=future rewards matter
+            'reward_weights':(1.0, 0.0, 0.0, 0.0)    
+            # w0=score w1=increase w2=gap w3=final turn factor
+        }    
+    # step 2: sart caring about future rewards
+    if 2*game_gap > game_idx:
+        param_dict={
+            'policy_algo_init':policy_algo_init,
+            'epsilon':0.1, # % random moves for exploration
+            'gamma':0.25, # discount rate, high=future rewards matter
+            'reward_weights':(1.0, 0.0, 0.0, 0.0)    
+            # w0=score w1=increase w2=gap w3=final turn factor
+        }
+    # step 3: start caring about end game rewards, increase future rewards
+    if 3*game_gap > game_idx:
+        param_dict={
+            'policy_algo_init':policy_algo_init,
+            'epsilon':0.1, # % random moves for exploration
+            'gamma':0.5, # discount rate, high=future rewards matter
+            'reward_weights':(1.0, 0.0, 0.0, 5.0)    
+            # w0=score w1=increase w2=gap w3=final turn factor
+        }
+    # step 4: focus on end game rewards
+    if 4*game_gap > game_idx:
+        param_dict={
+            'policy_algo_init':policy_algo_init,
+            'epsilon':0.1, # % random moves for exploration
+            'gamma':0.9, # discount rate, high=future rewards matter
+            'reward_weights':(1.0, 0.0, 0.0, 10.0)    
+            # w0=score w1=increase w2=gap w3=final turn factor
+        }
+    # step 5: focus on end game rewards, increase future rewards
+    if 5*game_gap > game_idx:
+        param_dict={
+            'policy_algo_init':policy_algo_init,
+            'epsilon':0.1, # % random moves for exploration
+            'gamma':0.95, # discount rate, high=future rewards matter
+            'reward_weights':(1.0, 0.0, 0.0, 10.0)    
+            # w0=score w1=increase w2=gap w3=final turn factor
+        }
+
+    return param_dict

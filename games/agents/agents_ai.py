@@ -59,25 +59,29 @@ class PolicyNet_CNN(nn.Module):
         return x.squeeze(-1)
 
 class PolicyNet(nn.Module):
-    def __init__(self, input_dim=12, hidden_dim=12, output_dim=1):
+    def __init__(self, input_dim=22, hidden_dim=22, output_dim=1):
         super().__init__()
         
-        self.fc1 = nn.Linear(input_dim, 64)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(64, 32)
-        self.relu2 = nn.ReLU()
-        self.fc3 = nn.Linear(32, 16)
-        self.relu3 = nn.ReLU()
-        self.fc4 = nn.Linear(16, output_dim)
-        self.softplus = nn.Softplus()  # ensures positive output
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.relu1 = nn.Identity()
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.relu2 = nn.Identity()
+        #self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        #self.relu3 = nn.ReLU()
+        self.fc4 = nn.Linear(hidden_dim, output_dim)
+        self.softplus = nn.Identity()  # ensures positive output
 
     def forward(self, x):
+        # hidden layer
         out = self.fc1(x)
         out = self.relu1(out)
+        # hidden layer
         out = self.fc2(out)
         out = self.relu2(out)
-        out = self.fc3(out)
-        out = self.relu3(out)
+        # second hidden layer
+        #out = self.fc3(out)
+        #out = self.relu3(out)
+        # output layer
         out = self.fc4(out)
         out = self.softplus(out)  # output constrained to be > 0
         return out
@@ -87,13 +91,15 @@ class RLAgent:
                  name="RLAgent",
                  policy_net=None,
                  epsilon=0.1,
-                 critic_lr=5*1e-3,
+                 critic_lr=1e-3,
                  save_interval=1,
-                 model_path="policy_net.pth"):
+                 model_path="policy_net.pth",
+                 policy_algo_init=None):
         
         self.name = name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = model_path
+        self.policy_algo_init=policy_algo_init
         
         # initialise policy net
         if policy_net is None:
@@ -110,6 +116,47 @@ class RLAgent:
         self.model_path = model_path
         self.epsilon = epsilon
         self.save_interval = save_interval
+        
+        if policy_algo_init is not None:
+            with torch.no_grad():
+                # Zero all weights and biases
+                for param in self.policy_net.parameters():
+                    param.zero_()
+
+                # pass all inputs to next layer as is
+                self.policy_net.fc1.weight.copy_(torch.eye(self.policy_net.fc2.out_features))
+                self.policy_net.fc1.bias[0] = 0.0
+                # pass all inputs to next layer as is
+                self.policy_net.fc2.weight.copy_(torch.eye(self.policy_net.fc2.out_features))
+                self.policy_net.fc2.bias.zero_()
+                # Map the final activation directly from hidden[0]
+                self.policy_net.fc4.weight.zero_()
+                self.policy_net.fc4.bias.zero_()
+            
+                if policy_algo_init == 'score_max_own':
+                    self.policy_net.fc4.weight[0][1] = 1.0
+                if policy_algo_init == 'score_max_potential_own':
+                    self.policy_net.fc4.weight[0][1] = 1.0 # score
+                    self.policy_net.fc4.weight[0][4] = 1.0 # road tiles
+                    self.policy_net.fc4.weight[0][7] = 1.0 # city tiles
+                    self.policy_net.fc4.weight[0][9] = 1.0 # abbeys
+                    self.policy_net.fc4.weight[0][10] = 1.0 # abbey neighbours
+                if policy_algo_init == 'score_max_potential_gap':
+                    # own
+                    self.policy_net.fc4.weight[0][1] = 1.0 # score
+                    self.policy_net.fc4.weight[0][4] = 1.0 # road tiles
+                    self.policy_net.fc4.weight[0][7] = 1.0 # city tiles
+                    self.policy_net.fc4.weight[0][9] = 1.0 # abbeys
+                    self.policy_net.fc4.weight[0][10] = 1.0 # abbey neighbours
+                    # opponent's
+                    player_vector_len = 11
+                    self.policy_net.fc4.weight[0][1+player_vector_len] = -1.0 # score
+                    self.policy_net.fc4.weight[0][4+player_vector_len] = -1.0 # road tiles
+                    self.policy_net.fc4.weight[0][7+player_vector_len] = -1.0 # city tiles
+                    self.policy_net.fc4.weight[0][9+player_vector_len] = -1.0 # abbeys
+                    self.policy_net.fc4.weight[0][10+player_vector_len] = -1.0 # abbey neighbours
+
+            print(f"[INFO] Policy network re-initialized for {policy_algo_init} mode.")
 
     def save_model(self):
         torch.save(self.policy_net.state_dict(), self.model_path)
@@ -125,9 +172,9 @@ class RLAgent:
         # --- ε-greedy strategy ---
         if random.random() < self.epsilon:
             # RANDOM action
-            #selected_action = random.choice(valid_actions)
+            selected_action = random.choice(valid_actions)
             # BEST HARDCODED action
-            selected_action = agent_score_max_own(valid_actions,game,player)
+            #selected_action = agent_score_max_own(valid_actions,game,player)
             #selected_action = agent_score_potential_max_own(valid_actions,game,player)
             #selected_action = agent_score_potential_delta_own(valid_actions,game,player)
             #selected_action = agent_score_potential_max_gap(valid_actions,game,player)
@@ -155,11 +202,11 @@ class RLAgent:
                         game_copy_copy = copy.copy(game_copy)
                         game_copy_copy.step(player, second_action)
                         #action_board_array = build_board_array(game_copy_copy, do_norm=True, connection_region_dict=subtile_dict)
-                        action_vector_array = build_state_vector(game_copy_copy,subtile_dict)
+                        action_vector_array,action_vector_dict = build_state_vector(game_copy_copy,subtile_dict)
                     else: 
                         #i.e. we did 1=Meeple
                         #action_board_array = build_board_array(game_copy, do_norm=True, connection_region_dict=subtile_dict)
-                        action_vector_array = build_state_vector(game_copy,subtile_dict)
+                        action_vector_array,action_vector_dict = build_state_vector(game_copy,subtile_dict)
 
                     # invert meeple layer based on player
                     
