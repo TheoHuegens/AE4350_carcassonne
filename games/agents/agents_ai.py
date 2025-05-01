@@ -59,31 +59,31 @@ class PolicyNet_CNN(nn.Module):
         return x.squeeze(-1)
 
 class PolicyNet(nn.Module):
-    def __init__(self, input_dim=22, hidden_dim=22, output_dim=1):
+    def __init__(self, input_dim=21, hidden_dim=21, output_dim=1):
         super().__init__()
         
         self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.relu1 = nn.Identity()
+        self.af1 = nn.Identity()
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.relu2 = nn.Identity()
+        self.af2 = nn.Identity()
         #self.fc3 = nn.Linear(hidden_dim, hidden_dim)
         #self.relu3 = nn.ReLU()
         self.fc4 = nn.Linear(hidden_dim, output_dim)
-        self.softplus = nn.Identity()  # ensures positive output
+        self.af3 = nn.Identity()
 
     def forward(self, x):
         # hidden layer
         out = self.fc1(x)
-        out = self.relu1(out)
+        out = self.af1(out)
         # hidden layer
         out = self.fc2(out)
-        out = self.relu2(out)
+        out = self.af2(out)
         # second hidden layer
         #out = self.fc3(out)
         #out = self.relu3(out)
         # output layer
         out = self.fc4(out)
-        out = self.softplus(out)  # output constrained to be > 0
+        out = self.af3(out)  # output constrained to be > 0
         return out
 
 class RLAgent:
@@ -91,25 +91,25 @@ class RLAgent:
                  name="RLAgent",
                  policy_net=None,
                  epsilon=0.1,
-                 critic_lr=1e-3,
+                 critic_lr=1e-9,
                  save_interval=1,
                  model_path="policy_net.pth",
                  policy_algo_init=None):
         
         self.name = name
+        # put network on GPU
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = model_path
-        self.policy_algo_init=policy_algo_init
         
         # initialise policy net
         if policy_net is None:
-            self.policy_net = PolicyNet().to(self.device)
+            self.policy_net = PolicyNet()
             if self.model_path is not None and os.path.exists(self.model_path):
                 self.load_model()
             else:
                 print(f"[INFO] No model found at {self.model_path}, starting fresh.")        
-        self.policy_net = self.policy_net.to(self.device)
-        self.policy_net.eval()
+        else:
+            self.policy_net = policy_net
 
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=critic_lr)
         self.loss_fn = nn.MSELoss()
@@ -139,8 +139,7 @@ class RLAgent:
                     self.policy_net.fc4.weight[0][1] = 1.0 # score
                     self.policy_net.fc4.weight[0][4] = 1.0 # road tiles
                     self.policy_net.fc4.weight[0][7] = 1.0 # city tiles
-                    self.policy_net.fc4.weight[0][9] = 1.0 # abbeys
-                    self.policy_net.fc4.weight[0][10] = 1.0 # abbey neighbours
+                    self.policy_net.fc4.weight[0][9] = 8.0 # abbeys
                 if policy_algo_init == 'score_max_potential_gap':
                     # own
                     self.policy_net.fc4.weight[0][1] = 1.0 # score
@@ -149,14 +148,18 @@ class RLAgent:
                     self.policy_net.fc4.weight[0][9] = 1.0 # abbeys
                     self.policy_net.fc4.weight[0][10] = 1.0 # abbey neighbours
                     # opponent's
-                    player_vector_len = 11
+                    player_vector_len = 10
                     self.policy_net.fc4.weight[0][1+player_vector_len] = -1.0 # score
                     self.policy_net.fc4.weight[0][4+player_vector_len] = -1.0 # road tiles
                     self.policy_net.fc4.weight[0][7+player_vector_len] = -1.0 # city tiles
-                    self.policy_net.fc4.weight[0][9+player_vector_len] = -1.0 # abbeys
+                    self.policy_net.fc4.weight[0][9+player_vector_len] = -9.0 # abbeys
                     self.policy_net.fc4.weight[0][10+player_vector_len] = -1.0 # abbey neighbours
 
             print(f"[INFO] Policy network re-initialized for {policy_algo_init} mode.")
+        
+        # move and inii policy net
+        self.policy_net.to(self.device)
+        self.policy_net.eval()
 
     def save_model(self):
         torch.save(self.policy_net.state_dict(), self.model_path)
@@ -186,34 +189,43 @@ class RLAgent:
             subtile_dict = construct_subtile_dict(do_norm=True)
             all_action_boards = []
             first_action_list = [] # track action associated with this move
+            
+            # make action boards
+            board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
+            board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict)
 
             for idx, first_action in enumerate(valid_actions):
-                game_copy = copy.copy(game) # this takes time, TODO: make update_board_array(board_array,action) that adds the tile or meeple placed
+                game_copy = copy.copy(game) # needed for .get possible actions
                 game_copy.step(player, first_action)
+                # update action boards
+                action_board_array_bitwise = update_board_array(board_array_normed,first_action,player,connection_region_dict=subtile_dict,do_norm=True)
+                action_board_array_normed = update_board_array(board_array_bitwise,first_action,player,connection_region_dict=subtile_dict,do_norm=False)
                 
                 if isinstance(first_action, TileAction): # try all meeple placements on that tile - hard to see what's good otherwise
-                    valid_second_actions = game_copy.get_possible_actions()
+                    #valid_second_actions = game_copy.get_possible_actions() # then look at tile-meeple action pair
+                    valid_second_actions = [None] # No secondary action # only look at action itself
                 else:
                     valid_second_actions = [None] # No secondary action
 
                 for second_action in valid_second_actions:
                     if second_action is not None: 
+                        #print('we eval tile-meeple action pair')
                         # i.e. we did 1=Tile then 2=Meeple
                         game_copy_copy = copy.copy(game_copy)
                         game_copy_copy.step(player, second_action)
-                        #action_board_array = build_board_array(game_copy_copy, do_norm=True, connection_region_dict=subtile_dict)
-                        action_vector_array,action_vector_dict = build_state_vector(game_copy_copy,subtile_dict)
-                    else: 
-                        #i.e. we did 1=Meeple
-                        #action_board_array = build_board_array(game_copy, do_norm=True, connection_region_dict=subtile_dict)
-                        action_vector_array,action_vector_dict = build_state_vector(game_copy,subtile_dict)
+                        # update actions board
+                        action_board_array_bitwise = update_board_array(action_board_array_bitwise,second_action,player,connection_region_dict=subtile_dict,do_norm=True)
+                        action_board_array_normed = update_board_array(action_board_array_normed,second_action,player,connection_region_dict=subtile_dict,do_norm=False)
+                        
+                        game_state = game_copy_copy.state
+                        action_game_state = [len(game_state.deck),game_state.scores[0],game_state.meeples[0],game_state.scores[1],game_state.meeples[1]]
+                    # make vector after last action
+                    else:
+                        game_state = game_copy.state
+                        action_game_state = [len(game_state.deck),game_state.scores[0],game_state.meeples[0],game_state.scores[1],game_state.meeples[1]]
+                    # translate to action vector
+                    action_vector_array, action_vector_dict = build_state_vector(action_game_state,action_board_array_normed,action_board_array_bitwise)
 
-                    # invert meeple layer based on player
-                    
-                    if player == 0: action_vector_array.append(1)
-                    else:           action_vector_array.append(-1)
-                    #print(len(action_vector_array))
-                    #print(action_vector_array)
                     all_action_boards.append(torch.tensor(action_vector_array, dtype=torch.float32))
                     first_action_list.append(first_action)  # link each board to its tile action
 
@@ -261,10 +273,10 @@ class RLAgent:
             return
     
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
+        #torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
         self.optimizer.step()
         
-        return loss.item()
+        return loss.item(), target_score.item(), predicted_score.item()
     
 # === DEBUG === #
 """

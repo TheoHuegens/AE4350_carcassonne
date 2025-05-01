@@ -107,12 +107,13 @@ def plot_training_progress(score_histories, reward_histories, player_labels, smo
     plt.tight_layout()
     plt.show()
 
-def plot_game_summary(player_labels,score_history,rewards_history,rewards_cumul_history,losses):
+def plot_game_summary(player_labels,score_history,rewards_history,rewards_cumul_history,losses,target_scores,predicted_scores):
     plot_score_history(score_history, player_labels,label='Score')
     plot_score_history(rewards_history, player_labels,label='Reward')
     plot_score_history(rewards_cumul_history, player_labels,label='Cumulative Reward')
+    plot_score_history(target_scores, player_labels,label='Target Scores')
+    plot_score_history(predicted_scores, player_labels,label='Predicted Scores')
     plot_score_history(losses, player_labels,label='Loss')
-
 
 def plot_score_history(score_history,player_labels,label='Score'):
     plt.figure(figsize=(8, 4))
@@ -337,18 +338,12 @@ def plot_carcassonne_board(board_array,state_dict,player_labels, interpret_board
     return ax
 
 def plot_network(model, input_data=None, output_label="t",
-                 layer_spacing=1.5, neuron_spacing=0.5, neuron_size=0.2, weight_threshold=0.01):
-    """
-    Visualize a feedforward PyTorch model with labeled neurons, colored activations, 
-    weight signs, biases, and connection legend.
+                 layer_spacing=1.5, neuron_spacing=0.5, neuron_size=0.2,
+                 weight_threshold=0.01, game_idx=0):
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import numpy as np
 
-    Args:
-        model (nn.Module): The neural network model.
-        input_data (dict or None): If provided, dict keys used as input labels.
-        output_label (str): Label for the output neuron.
-    """
-
-    # Map activations to colors
     act_color_map = {
         "Sigmoid": "#66ccff",
         "ReLU": "#66ff66",
@@ -358,92 +353,84 @@ def plot_network(model, input_data=None, output_label="t",
         "Input": "#add8e6"
     }
 
-    # Extract model structure
-    input_dim = next(m.in_features for m in model.modules() if isinstance(m, nn.Linear))
-    input_labels = list(input_data.keys()) if input_data else [f"x{i}" for i in range(input_dim)]
-
-    layers = [input_dim]
+    # Structure extraction
+    layers = []
     weights, biases, activations = [], [], []
+    input_dim = None
 
     for m in model.children():
         if isinstance(m, nn.Linear):
+            if input_dim is None:
+                input_dim = m.in_features
+                layers = [input_dim]
             layers.append(m.out_features)
             weights.append(m.weight.detach().cpu().numpy())
             biases.append(m.bias.detach().cpu().numpy())
-        elif isinstance(m, (nn.ReLU, nn.Sigmoid, nn.Tanh, nn.Softplus)):
+        elif isinstance(m, (nn.ReLU, nn.Sigmoid, nn.Tanh, nn.Softplus, nn.Identity)):
             activations.append(m.__class__.__name__)
 
-    # Layout
-    fig, ax = plt.subplots(figsize=(layer_spacing * len(layers), neuron_spacing * max(layers) * 1.05))
-    neuron_positions = []
+    input_labels = list(input_data.keys()) if input_data else [f"x{i}" for i in range(input_dim)]
 
-    for i, layer_size in enumerate(layers):
-        x = i * layer_spacing
+    fig, ax = plt.subplots(figsize=(layer_spacing * len(layers), neuron_spacing * max(layers) * 1.1))
+    neuron_positions = [None] * len(layers)
+
+    # Draw neurons and record positions
+    for layer_idx, layer_size in enumerate(layers):
+        x = layer_idx * layer_spacing
         y_offset = (layer_size - 1) * neuron_spacing / 2
+        color = (
+            act_color_map["Input"] if layer_idx == 0 else
+            act_color_map["Linear"] if layer_idx == len(layers) - 1 else
+            act_color_map.get(activations[layer_idx - 1], "#dddddd")
+        )
+
         layer_positions = []
+        for neuron_idx in range(layer_size):
+            y = -neuron_idx * neuron_spacing + y_offset
+            layer_positions.append((x, y))
+            circle = plt.Circle((x, y), neuron_size, color=color, ec='black', zorder=2)
+            ax.add_patch(circle)
 
-        # Neuron color
-        if i == 0:
-            color = act_color_map["Input"]
-        elif i == len(layers) - 1:
-            color = act_color_map["Linear"]
-        else:
-            if i - 1 < len(activations):
-                act_name = activations[i - 1]
-            else:
-                act_name = "linear"
-                color = act_color_map.get(act_name, "#dddddd")
-
-        for j in range(layer_size):
-            y = -j * neuron_spacing + y_offset  # Reversed: top to bottom
-            ax.add_patch(plt.Circle((x, y), neuron_size, color=color, ec='black', zorder=2))
-
-            # Labels
-            if i == 0:
-                label = input_labels[j] if j < len(input_labels) else f"x{j}"
+            if layer_idx == 0:
+                label = input_labels[neuron_idx] if neuron_idx < len(input_labels) else f"x{neuron_idx}"
                 ax.text(x - 0.4, y, label, va='center', ha='right', fontsize=9)
-            elif i == len(layers) - 1:
+            elif layer_idx == len(layers) - 1:
                 ax.text(x + 0.4, y, output_label, va='center', ha='left', fontsize=10)
             else:
-                ax.text(x, y + 0.35, f"h{i}_{j}", va='bottom', ha='center', fontsize=8)
+                ax.text(x, y + 0.35, f"h{layer_idx}_{neuron_idx}", va='bottom', ha='center', fontsize=8)
 
-            # Bias annotation
-            if i > 0:
-                b_val = biases[i - 1][j]
+            if layer_idx > 0:
+                b_val = biases[layer_idx - 1][neuron_idx]
                 ax.text(x, y - 0.35, f"b={b_val:.2f}", va='top', ha='center', fontsize=7, color='gray')
 
-            layer_positions.append((x, y))
-        neuron_positions.append(layer_positions)
+        neuron_positions[layer_idx] = layer_positions
 
-    # Draw connections
-    for l in range(len(weights)):
-        w = weights[l]
-        for i, (x1, y1) in enumerate(neuron_positions[l]):
-            for j, (x2, y2) in enumerate(neuron_positions[l + 1]):
-                weight = w[j, i]
-                if abs(weight) > weight_threshold:
-                    color = 'red' if weight < 0 else 'blue'
-                    linewidth = 0.5 + 2 * min(1, abs(weight))
-                    ax.plot([x1, x2], [y1, y2], color=color, lw=linewidth, alpha=0.6, zorder=1)
+    # Draw weighted connections
+    for layer_idx, w in enumerate(weights):
+        pos_in = neuron_positions[layer_idx]
+        pos_out = neuron_positions[layer_idx + 1]
 
-    # Title and legend
-    plt.title("Neural Network Architecture", fontsize=14, pad=20)
+        rows, cols = np.where(np.abs(w) > weight_threshold)
+        for j, i in zip(rows, cols):  # j = out, i = in
+            x1, y1 = pos_in[i]
+            x2, y2 = pos_out[j]
+            weight = w[j, i]
+            color = 'red' if weight < 0 else 'blue'
+            lw = 0.5 + 2 * min(1, abs(weight))
+            ax.plot([x1, x2], [y1, y2], color=color, lw=lw, alpha=0.6, zorder=1)
+
+    # Add title and legend
+    ax.set_title(f"Neural Network Architecture\n at training step {game_idx}", fontsize=14, pad=20)
     ax.axis('equal')
     ax.axis('off')
 
-    # Legend
-    red_line = mpatches.Patch(color='red', label='Negative Weight')
-    blue_line = mpatches.Patch(color='blue', label='Positive Weight')
-    legend_elements = [red_line, blue_line]
-
-    for act, col in act_color_map.items():
-        patch = mpatches.Patch(color=col, label=f"{act} Neuron")
-        legend_elements.append(patch)
+    legend_elements = [
+        mpatches.Patch(color='red', label='Negative Weight'),
+        mpatches.Patch(color='blue', label='Positive Weight')
+    ] + [mpatches.Patch(color=col, label=f"{act} Neuron") for act, col in act_color_map.items()]
 
     ax.legend(handles=legend_elements, loc='upper center',
               bbox_to_anchor=(0.5, -0.07), ncol=3, fontsize=8)
 
     plt.tight_layout()
-    #plt.show()
-
-    return fig,ax
+    return fig, ax

@@ -60,17 +60,19 @@ def two_player_game(
     board_history = []
     turn_history = []
     losses = []
+    target_scores = []
+    predicted_scores = []
     
     agent_classes = {
         "random": RandomAgent(),
         "center": AgentCenter(),
+        "score_max_own": AgentScoreMaxOwn(),
         "score_max_potential_own": AgentScoreMaxPotentialOwn(),
         'human': AgentUserInput(),
         #"RLAgent": RLAgent(), # special case handled later
     }
     
     # choose player agents
-    player1_agent=agent_classes[p1]
     if p0=="RLAgent":
         if game_idx==0: player0_agent=RLAgent(epsilon = epsilon,policy_algo_init=policy_algo_init)
         else:           player0_agent=RLAgent(epsilon = epsilon)
@@ -89,8 +91,7 @@ def two_player_game(
     # plot neural network for this game
     if do_plot and isinstance(player0_agent, RLAgent):
         fig_nn,ax_nn = plot_network(player0_agent.policy_net)
-    if do_plot and isinstance(player1_agent, RLAgent):
-        fig_nn,ax_nn = plot_network(player1_agent.policy_net)
+
     # plots later
     if do_plot:
         fig, ax = plt.subplots()
@@ -127,22 +128,24 @@ def two_player_game(
             
             # Save board state
             if do_plot or do_train:
+                # choose whether we train on all actions or just meeple actions
                 #if isinstance(action,TileAction):
                 #    turn_history.append(0)
                 #else:turn_history.append(1)
                 turn_history.append(1)
 
-                board_array = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
-                action_vector_array,action_vector_dict = build_state_vector(game,subtile_dict)
-                action_vector_array.append(1)# this can only be trained on p0 for now
+                board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
+                board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict)
+                game_state = [len(game.state.deck),game.state.scores[0],game.state.meeples[0],game.state.scores[1],game.state.meeples[1]]
+                action_vector_array, action_vector_dict = build_state_vector(game_state,board_array_normed,board_array_bitwise)
 
                 board_tensor = torch.tensor(action_vector_array, dtype=torch.float32)
                 board_tensor = torch.nan_to_num(board_tensor, nan=0.0)
                 board_history.append(board_tensor)
 
                 if do_plot:
-                    interpret_board_dict = interpret_board_array(board_array)
-                    plot_carcassonne_board(board_array, action_vector_dict, player_labels, interpret_board_dict, ax=ax)
+                    interpret_board_dict = interpret_board_array(board_array_bitwise)
+                    plot_carcassonne_board(board_array_bitwise, action_vector_dict, player_labels, interpret_board_dict, ax=ax)
                     writer.grab_frame()
 
             # Record scores
@@ -156,6 +159,7 @@ def two_player_game(
             )
             rewards_history.append(rewards)
     
+    if do_plot: display(Image(filename="carcassonne_game.gif"))
     starttime_postproc = time.time()
 
     # compute final reward based on winner
@@ -168,87 +172,93 @@ def two_player_game(
         # --- After game finished: discounted training pass ---
 
         T = len(board_history)
-        R_cumul = []
+        rewards_cumul_history = []
         reward_cumul = [0,0]
         for t in reversed(range(T)):
             # coompute disounted cumulative reward increase
             reward_cumul[0] = rewards_history[t][0] + gamma * reward_cumul[0]
             reward_cumul[1] = rewards_history[t][1] + gamma * reward_cumul[1]
             
-            R_cumul.insert(0, reward_cumul.copy())
+            rewards_cumul_history.insert(0, reward_cumul.copy())
             
             # train for this reward step
         for t in range(T):
             board_tensor = board_history[t]
-            reward_cumul = R_cumul[t]
+            reward_cumul = rewards_cumul_history[t]
             loss=[0,0]
-            MIN_TURN_EVAL = 8 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
+            target_score=[0,0]
+            predicted_score=[0,0]
+
+            MIN_TURN_EVAL = 20 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
             if t>MIN_TURN_EVAL:
                 if turn_history[t]==1: # i.e. Meeple turn
                     for player in range(2):
                         loss_p=0
                         # train the RL agent on both player scores
                         if player==0 and isinstance(player0_agent, RLAgent):
-                            #print(player,reward_cumul[player])
-                            loss_p = player0_agent.train_step(board_tensor, reward_cumul[player], player)
-                        if player==1 and isinstance(player1_agent, RLAgent):
+                            # player 0
+                            loss[0], target_score[0], predicted_score[0] = player0_agent.train_step(board_tensor, reward_cumul[0], 0)
+                            # adjust tensor and train with player 1 data too
                             board_tensor_inverted = board_tensor
-                            board_tensor_inverted[-1]=-1
-                            loss_p = player1_agent.train_step(board_tensor, reward_cumul[player], player)
-                        # assign losses to each player for inspection
-                        if player==0: loss[0]=loss_p
-                        else: loss[1]=loss_p
+                            board_tensor_inverted[1:11]= board_tensor[11:21]
+                            board_tensor_inverted[11:21]= board_tensor[1:11]
+                            loss[1], target_score[1], predicted_score[1]  = player0_agent.train_step(board_tensor, reward_cumul[1], 1)
             losses.append(loss)
-        
+            target_scores.append(target_score)
+            predicted_scores.append(predicted_score)
+
     # Save model at the end
     if do_save:
         if isinstance(player0_agent, RLAgent):
             player0_agent.save_model()
-        if isinstance(player1_agent, RLAgent):
-            player1_agent.save_model()
     
     # plot neural network for this game's training
-    if do_plot and isinstance(player0_agent, RLAgent):
-        fig_nn,ax_nn = plot_network(player0_agent.policy_net,input_data=action_vector_dict)
-    if do_plot and isinstance(player1_agent, RLAgent):
-        fig_nn,ax_nn = plot_network(player1_agent.policy_net,input_data=action_vector_dict)
+    if do_plot and do_train:
+        if isinstance(player0_agent, RLAgent):
+            fig_nn,ax_nn = plot_network(player0_agent.policy_net,input_data=action_vector_dict,game_idx=game_idx)
+        plot_game_summary(player_labels,score_history,rewards_history,rewards_cumul_history,losses,target_scores,predicted_scores)
 
     #print(f'Setup took    {starttime_loop - starttime_game:.2f} seconds')
     #print(f'Game took     {starttime_postproc - starttime_game:.2f} seconds')
     #print(f'Wrapping took {time.time() - starttime_postproc:.2f} seconds')
+    print(f'[RESULTS] time {time.time() - starttime_loop:.2f} seconds')
     print(f'[RESULTS] scores: {score_history[-1]}')
 
     if do_train:
-        return player_labels, score_history, rewards_history, R_cumul, losses, player0_agent, player1_agent, action_vector_dict
+        return player_labels, score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores, player0_agent, player1_agent, action_vector_dict
     else:
-        return score_history, None, None, None, None, None, None, None
+        return score_history, None, None, None, None, None, None, None, None, None
 
 if __name__ == '__main__':
 
     # initial vars
     random.seed(0)
     # run game
-    do_plot=True
+    do_profile = False
 
     # and profile what takes long
-    with Profile() as profile:
-        player_labels, score_history, rewards_history, rewards_cumul_history, losses, player0_agent, player1_agent, action_vector_dict = two_player_game(
+    if do_profile:
+        with Profile() as profile:
+            player_labels, score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores, agent0, agent1, state_vector = two_player_game(
+                board_size=15,
+                max_turn=500,
+                do_plot=True,
+                p0="RLAgent", # RLAgent
+                p1="random",
+                do_train=False,
+                do_save=False, # so we can tune learning rate and weights without messing up the model
+                game_idx=1 # set no >0 to use settings from training plan
+            )           
+        Stats(profile).strip_dirs().sort_stats(SortKey.TIME).print_stats()
+
+    else:
+        player_labels, score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores, agent0, agent1, state_vector = two_player_game(
             board_size=15,
             max_turn=500,
-            do_plot=do_plot,
+            do_plot=True,
             p0="RLAgent", # RLAgent
-            p1="random",
+            p1="score_max_own",
             do_train=True,
             do_save=False, # so we can tune learning rate and weights without messing up the model
             game_idx=0 # set no >0 to use settings from training plan
-        )   
-
-        (
-            Stats(profile)
-            .strip_dirs()
-            .sort_stats(SortKey.TIME)
-            .print_stats()
-        )
-
-    if do_plot:
-        plot_game_summary(player_labels,score_history,rewards_history,rewards_cumul_history,losses)
+        )           

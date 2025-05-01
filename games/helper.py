@@ -1,3 +1,4 @@
+# first class imports
 import random
 import numpy as np
 from typing import Optional
@@ -10,7 +11,11 @@ from collections import deque
 import seaborn as sns
 import copy
 import scipy.ndimage
-
+# library imports
+from wingedsheep.carcassonne.objects.actions.action import Action
+from wingedsheep.carcassonne.objects.actions.pass_action import PassAction
+from wingedsheep.carcassonne.objects.actions.tile_action import TileAction
+from wingedsheep.carcassonne.objects.actions.meeple_action import MeepleAction
 from wingedsheep.carcassonne.utils.points_collector import *
 
 def construct_subtile_dict(do_norm=False):
@@ -78,14 +83,15 @@ def build_board_array(game, do_norm=True, connection_region_dict=None):
     for x, row in enumerate(board):
         for y, tile in enumerate(row):
             if tile is not None:
-                tile_array = build_tile_array(tile, game, x, y, connection_region_dict)
+                tile_array = build_tile_array(tile, connection_region_dict)
                 sx, sy = 3 * x, 3 * y
                 board_array[:, sx:sx+3, sy:sy+3] = tile_array
 
-    add_meeples_to_tile_array(game, board_array, connection_region_dict)
+    placed_meeples = game.state.placed_meeples
+    board_array = add_meeples_to_tile_array(placed_meeples, board_array, connection_region_dict)
     return board_array
 
-def build_tile_array(tile,game,x,y,connection_region_dict):
+def build_tile_array(tile,connection_region_dict):
     
     tile_array = np.zeros((4,3,3)) # 3x3 subgrid for each tile property
 
@@ -127,12 +133,16 @@ def build_tile_array(tile,game,x,y,connection_region_dict):
     chapel_score = 1#connection_region_dict["full"][1][1] #0-1 since 8th neighbour tile = 9th tile = 1.125 but immediately earned before meeple turn
     if tile.chapel:
         # scale value with number of neighbours
+        # TODO: find a way to this without the game object and whitout ommitting next tiles to be added to board array
+        """
         neighbours = [ [0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1] ] # shift requires to get to 8 tiles around
         neighbour_num = chapel_score
         for n in neighbours:
             shifted_tile = game.state.board[x+n[0]][y+n[1]]
             if shifted_tile is not None:
                 neighbour_num += chapel_score
+        """
+        neighbour_num=1
         tile_layer = neighbour_num * np.array(connection_region_dict['center'])
     else:
         tile_layer = connection_region_dict['empty']
@@ -140,35 +150,60 @@ def build_tile_array(tile,game,x,y,connection_region_dict):
 
     return tile_array
 
-def add_meeples_to_tile_array(game,board_array,connection_region_dict):
+def add_meeples_to_tile_array(placed_meeples,board_array,connection_region_dict):
     
-    for p in range(len(game.state.placed_meeples)): # meeples of player p
-        for m in range(len(game.state.placed_meeples[p])):
-            meeple_placed = game.state.placed_meeples[p][m] # m th meeple of player p
+    for p in range(len(placed_meeples)): # meeples of player p
+        for m in range(len(placed_meeples[p])):
+            meeple_placed = placed_meeples[p][m] # m th meeple of player p
             
-            # TODO: ensure own player is in same layer regarless of p,m 
-            if p == 0:  player_factor = +1 # own meeples
-            else:       player_factor = -1 # opponent(s)'
-            
-            # extract info
-            meeple_row = meeple_placed.coordinate_with_side.coordinate.row
-            meeple_col = meeple_placed.coordinate_with_side.coordinate.column
-            meeple_side = meeple_placed.coordinate_with_side.side.value
-            
-            # convert to board subgrid position and add on layer 0 (meeples)
-            tile_layer = np.array(connection_region_dict[meeple_side]) * player_factor
-            board_array[0,3*meeple_row:3*meeple_row+3,3*meeple_col:3*meeple_col+3] = tile_layer
-
-def update_board_array(board_array,action):
-    # adds the tile on board
+            board_array = add_meeple_to_board_array(meeple_placed,p,board_array,connection_region_dict)
     
-    # adds the meeple on board
-    pass
+    return board_array # you'd think it's needed but no..
 
-def build_state_vector(game,subtile_dict):
-    # grab and format information
-    board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
-    board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict)
+def add_meeple_to_board_array(meeple_placed,player,board_array,connection_region_dict):
+    # TODO: ensure own player is in same layer regarless of p,m 
+    if player == 0:  player_factor = +1 # own meeples
+    else:       player_factor = -1 # opponent(s)'
+    
+    # extract info
+    meeple_row = meeple_placed.coordinate_with_side.coordinate.row
+    meeple_col = meeple_placed.coordinate_with_side.coordinate.column
+    meeple_side = meeple_placed.coordinate_with_side.side.value
+    
+    # convert to board subgrid position and add on layer 0 (meeples)
+    tile_layer = np.array(connection_region_dict[meeple_side]) * player_factor
+    board_array[0,3*meeple_row:3*meeple_row+3,3*meeple_col:3*meeple_col+3] = tile_layer
+    
+    return board_array
+
+def update_board_array(board_array,action,player,connection_region_dict=None,do_norm=False):
+    
+    if not isinstance(action,PassAction):
+        # make dict if ont provided
+        if connection_region_dict is None:
+            connection_region_dict = construct_subtile_dict(do_norm=do_norm)
+
+        # adds the tile on board
+        if isinstance(action,TileAction):
+            # get tile action info
+            tile = action.tile 
+            x=action.coordinate.column
+            y=action.coordinate.row
+            # translate to 3x3 subgrid board array coordinates
+            sx, sy = 3 * x, 3 * y
+            # make the tile
+            tile_array = build_tile_array(tile,connection_region_dict)
+            # add the tile to board
+            board_array[:, sx:sx+3, sy:sy+3] = tile_array
+
+        # adds the meeple on board
+        if isinstance(action,MeepleAction):
+            # only thing needed from meeple input is coordinate with side which is also in action
+            board_array = add_meeple_to_board_array(action,player,board_array,connection_region_dict)
+            
+    return board_array
+
+def build_state_vector(game_state,board_array_normed,board_array_bitwise):
     #board_array_bitwise = np.where(board_array_normed > 0, 1, np.where(board_array_normed < 0, -1, arr)) # faster to transform that way but idk if it works
     board_masks = interpret_board_array(board_array_bitwise) # ! un-normed !
     """
@@ -187,17 +222,17 @@ def build_state_vector(game,subtile_dict):
     
     # game progress
     state_dict = {
-        'tiles_left_in_drawpile': len(game.state.deck)
+        'tiles_left_in_drawpile': game_state[0]
     }
     
     # player attributes and status
-    for p in range(game.players):
+    for p in range(2):
         #if p==0: factor=+1#0th player is default me
         #else:   factor =-1
         factor=1
         player_dict = {
-            f'p{p}_score':               factor*float(game.state.scores[p]),
-            f'p{p}_meeple_in_hand':      factor*float(game.state.meeples[p]),
+            f'p{p}_score':               factor*float(game_state[1+2*p]),
+            f'p{p}_meeple_in_hand':      factor*float(game_state[2+2*p]),
             f'p{p}_road_meeple':         factor*float(np.sum(board_masks['road_mask'] &   board_masks[f'meeples_mask_{p}'])), # meeples on a road
             f'p{p}_road_tiles':          factor*float(np.nansum(board_array_normed[1] *   board_masks[f'owned_mask_{p}'])), # all connected roads (excl. intersection) that overlap with the owned region, weighed
             f'p{p}_road_ends':           factor*float(0), # TBD
@@ -210,6 +245,7 @@ def build_state_vector(game,subtile_dict):
         state_dict.update(player_dict)
     
     state_vector = list(state_dict.values())
+    state_vector = [x/100 for x in state_vector]
     #print(len(state_vector))
     
     return state_vector, state_dict
@@ -302,7 +338,7 @@ def interpret_board_array(board_array):
     
     return interpret_board_dict
 
-def estimate_potential_score(game,method='object'):
+def estimate_potential_score(game,method='array'):
     
     # do it by meeple end-game grab
     # for some reason the copied game still impact all game objects
@@ -313,19 +349,19 @@ def estimate_potential_score(game,method='object'):
     
     # do it via board interpreted form
     elif method=='array':
-        state_vector,state_dict = build_state_vector(game)
-
-        board_array_bool = build_board_array(game,do_norm=False)
-        board_array_vals = build_board_array(game,do_norm=True)
-        interpret_board_dict = interpret_board_array(board_array_bool,state_vector)
+        subtile_dict = construct_subtile_dict(do_norm=True)
+        game_state = game.state
+        action_game_state = [len(game_state.deck),game_state.scores[0],game_state.meeples[0],game_state.scores[1],game_state.meeples[1]]
+        board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
+        board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict)
+        action_vector_array, action_vector_dict = build_state_vector(action_game_state,board_array_normed,board_array_bitwise)
 
         # layers 1=roads, 2=city, 3=abbeys
-        point_array = np.nansum( board_array_vals[1:4], axis=0 )
-        scores = []
-        for p in range(2):# for 2 players
-            point_array_p = point_array * interpret_board_dict[f"owned_mask_{p}"]
-            scores.append(np.sum(point_array_p))
-    
+        # own
+        scores=[0,0]
+        for p in range(2):
+            scores[p] = action_vector_dict[f"p{p}_score"]+action_vector_dict[f"p{p}_road_tiles"]+action_vector_dict[f"p{p}_city_tiles"]+8*action_vector_dict[f"p{p}_abbeys"]
+            scores[p]/100
     return scores
 
 def compute_rewards(
@@ -395,66 +431,42 @@ def compute_rewards(
         game_result = 0.0 # dont use this anymore
 
         reward = (w0 * current_score) + (w1 * score_diff) + (w2 * score_gap) + (w3 * game_result)
-        rewards[player] = reward*turn_correction_factor#/100
+        rewards[player] = reward*turn_correction_factor/100
 
     return rewards
 
 def training_plan(game_idx):
     game_gap = 10
-    policy_algo_init=None
-    
-    # initially just try to match increase score default with lots of exploration
+    policy_algo_init='score_max_own'
+    reward_weights =(1.0, 0.0, 0.0, 0.0)
+    # w0=score w1=increase w2=gap w3=final turn factor
+
+    # step 0: focus on end game rewards
     param_dict={
         'policy_algo_init':policy_algo_init,
-        'epsilon':0.5, # % random moves for exploration
+        'epsilon':0.01, # % random moves for exploration
         'gamma':0.0, # discount rate, high=future rewards matter
-        'reward_weights':(1.0, 0.0, 0.0, 0.0)    
+        'reward_weights':reward_weights
         # w0=score w1=increase w2=gap w3=final turn factor
     }
-    # step 1: settle exploration and match score max
-    if 1*game_gap > game_idx:
-        param_dict={
-            'policy_algo_init':policy_algo_init,
-            'epsilon':0.1, # % random moves for exploration
-            'gamma':0.0, # discount rate, high=future rewards matter
-            'reward_weights':(1.0, 0.0, 0.0, 0.0)    
-            # w0=score w1=increase w2=gap w3=final turn factor
-        }    
-    # step 2: sart caring about future rewards
-    if 2*game_gap > game_idx:
-        param_dict={
-            'policy_algo_init':policy_algo_init,
-            'epsilon':0.1, # % random moves for exploration
-            'gamma':0.25, # discount rate, high=future rewards matter
-            'reward_weights':(1.0, 0.0, 0.0, 0.0)    
-            # w0=score w1=increase w2=gap w3=final turn factor
-        }
-    # step 3: start caring about end game rewards, increase future rewards
-    if 3*game_gap > game_idx:
-        param_dict={
-            'policy_algo_init':policy_algo_init,
-            'epsilon':0.1, # % random moves for exploration
-            'gamma':0.5, # discount rate, high=future rewards matter
-            'reward_weights':(1.0, 0.0, 0.0, 5.0)    
-            # w0=score w1=increase w2=gap w3=final turn factor
-        }
-    # step 4: focus on end game rewards
-    if 4*game_gap > game_idx:
-        param_dict={
-            'policy_algo_init':policy_algo_init,
-            'epsilon':0.1, # % random moves for exploration
-            'gamma':0.9, # discount rate, high=future rewards matter
-            'reward_weights':(1.0, 0.0, 0.0, 10.0)    
-            # w0=score w1=increase w2=gap w3=final turn factor
-        }
-    # step 5: focus on end game rewards, increase future rewards
-    if 5*game_gap > game_idx:
+    # step 1: focus on end game rewards, increase future rewards
+    """
+    if 1*game_gap < game_idx:
         param_dict={
             'policy_algo_init':policy_algo_init,
             'epsilon':0.1, # % random moves for exploration
             'gamma':0.95, # discount rate, high=future rewards matter
-            'reward_weights':(1.0, 0.0, 0.0, 10.0)    
+            'reward_weights':reward_weights
             # w0=score w1=increase w2=gap w3=final turn factor
         }
-
+    # step 2: stop exploration, increase future rewards
+    if 2*game_gap < game_idx:
+        param_dict={
+            'policy_algo_init':policy_algo_init,
+            'epsilon':0.01, # % random moves for exploration
+            'gamma':0.975, # discount rate, high=future rewards matter
+            'reward_weights':reward_weights
+            # w0=score w1=increase w2=gap w3=final turn factor
+        }
+    """
     return param_dict

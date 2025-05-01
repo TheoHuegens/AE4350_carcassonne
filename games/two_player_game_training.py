@@ -28,13 +28,12 @@ from two_player_game import two_player_game
 from matplotlib.animation import PillowWriter
 
 def play_multiple_games(
-    N_games,
-    board_size,
-    max_turn,
-    do_convert,
-    do_plot,
-    player0_agent,
-    player1_agent,
+    N_games=2,
+    board_size=15,
+    max_turn=500,
+    do_plot=True,
+    player0_agent='random',
+    player1_agent='random'
 ):
     score_histories = []
     reward_histories = []
@@ -43,17 +42,17 @@ def play_multiple_games(
 
     for game_idx in range(N_games):
         print(f"\n--- Playing Game {game_idx+1}/{N_games} ---")
-        random.seed(game_idx) # ensures reproducibility
-        #random.seed(0) # can look at improvements better but worse for overall training -- testing only --
-
-        player_labels, score_history, rewards_history, rewards_cumul_history, losses, agent0, agent1, state_vector = two_player_game(
+        #random.seed(game_idx) # ensures reproducibility
+        random.seed(0) # can look at improvements better but worse for overall training -- testing only --
+        #print(game_idx)
+        player_labels, score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores, agent0, agent1, state_vector = two_player_game(
             board_size=board_size,
             max_turn=max_turn,
-            do_convert=False,
             do_plot=False, # never plot each game if doing many runs
             p0=player0_agent,
             p1=player1_agent,
             do_save=True,
+            do_train=True,
             game_idx=game_idx
         )
 
@@ -70,8 +69,8 @@ def play_multiple_games(
         reward_cumul_histories.append(final_cumul_reward)
     
         if do_plot:
-            plot_game_summary(player_labels, score_history, rewards_history, rewards_cumul_history, losses)
-            fig_nn, _ = plot_network(agent0.policy_net, input_data=state_vector)
+            #plot_game_summary(player_labels, score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores)
+            fig_nn, _ = plot_network(agent0.policy_net, input_data=state_vector, game_idx=game_idx)
             
             # Capture frame as RGBA image for GIF
             fig_nn.canvas.draw()
@@ -82,7 +81,7 @@ def play_multiple_games(
     # Save network evolution GIF
     if do_plot and network_frames:
         fig_gif, ax = plt.subplots()
-        writer = PillowWriter(fps=12)
+        writer = PillowWriter(fps=16)
         with writer.saving(fig_gif, "network_evolution.gif", dpi=400):
             for frame in network_frames:
                 ax.imshow(frame)
@@ -90,33 +89,28 @@ def play_multiple_games(
                 writer.grab_frame()
                 ax.clear()
         plt.close(fig_gif)
+        
+        display(Image(filename="network_evolution.gif"))
 
-    return (
-        np.array(score_histories),
-        np.array(reward_histories),
-        np.array(reward_cumul_histories)
-    )
-    
+    return score_histories, reward_histories
+
 # Run N games
 if __name__ == '__main__':
     p0 = "RLAgent"
-    p1 = "center"
+    p1 = "score_max_own"
 
     # train over N games
-    N_games = 100
-    score_histories, reward_histories, rewards_cumul_history = play_multiple_games(
-        N_games,
+    N_games = 10
+    score_histories, reward_histories = play_multiple_games(
+        N_games=N_games,
         board_size=15,
         max_turn=500,
-        do_convert=True,
         do_plot=True,
         player0_agent=p0,
         player1_agent=p1
     )
 
-    # and look at the results
     plot_training_progress(score_histories, reward_histories, player_labels={
         0: {"name": p0, "color": "blue"},
         1: {"name": p1, "color": "orange"},
     })
-
