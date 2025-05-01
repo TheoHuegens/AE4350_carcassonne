@@ -59,14 +59,17 @@ def agent_score_max_own(valid_actions,game,player=0):
 
     for action in valid_actions:
         if action is not None:
+            game_nextmove = copy.copy(game)
             game_nextmove.step(player, action)
 
         # Collect game state
         score_history.append([game_nextmove.state.scores[0], game_nextmove.state.scores[1]])
 
-    score_mine = np.array(score_history)[:,player]
-    action_index = np.argmax(score_mine)
-    action = valid_actions[action_index]
+    # reward is own score
+    action_scores = np.array(score_history)[:,player]
+
+    # pick the best
+    action = valid_actions[np.argmax(action_scores)]
     
     return action
 

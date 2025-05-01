@@ -67,7 +67,9 @@ def two_player_game(
         "random": RandomAgent(),
         "center": AgentCenter(),
         "score_max_own": AgentScoreMaxOwn(),
+        "score_max_gap": AgentScoreMaxGap(),
         "score_max_potential_own": AgentScoreMaxPotentialOwn(),
+        "score_max_potential_gap": AgentScoreMaxPotentialGap(),
         'human': AgentUserInput(),
         #"RLAgent": RLAgent(), # special case handled later
     }
@@ -127,16 +129,16 @@ def two_player_game(
                 game.step(player, action)
             
             # Save board state
-            if do_plot or do_train:
+            if do_plot or do_train or True:
                 # choose whether we train on all actions or just meeple actions
                 #if isinstance(action,TileAction):
                 #    turn_history.append(0)
                 #else:turn_history.append(1)
                 turn_history.append(1)
-
-                board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
-                board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict)
-                game_state = [len(game.state.deck),game.state.scores[0],game.state.meeples[0],game.state.scores[1],game.state.meeples[1]]
+                game_to_save = game
+                board_array_normed = build_board_array(game_to_save, do_norm=True, connection_region_dict=subtile_dict)
+                board_array_bitwise = build_board_array(game_to_save, do_norm=False, connection_region_dict=subtile_dict)
+                game_state = [len(game_to_save.state.deck),game_to_save.state.scores[0],game_to_save.state.meeples[0],game_to_save.state.scores[1],game_to_save.state.meeples[1]]
                 action_vector_array, action_vector_dict = build_state_vector(game_state,board_array_normed,board_array_bitwise)
 
                 board_tensor = torch.tensor(action_vector_array, dtype=torch.float32)
@@ -149,7 +151,9 @@ def two_player_game(
                     writer.grab_frame()
 
             # Record scores
-            score_history.append(game.state.scores)
+            #scores = estimate_potential_score(game,method='object')
+            scores = game.state.scores
+            score_history.append(scores)
 
             # --- Immediate reward computation ---
             rewards = compute_rewards(
@@ -189,7 +193,7 @@ def two_player_game(
             target_score=[0,0]
             predicted_score=[0,0]
 
-            MIN_TURN_EVAL = 20 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
+            MIN_TURN_EVAL = 0 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
             if t>MIN_TURN_EVAL:
                 if turn_history[t]==1: # i.e. Meeple turn
                     for player in range(2):
@@ -199,10 +203,8 @@ def two_player_game(
                             # player 0
                             loss[0], target_score[0], predicted_score[0] = player0_agent.train_step(board_tensor, reward_cumul[0], 0)
                             # adjust tensor and train with player 1 data too
-                            board_tensor_inverted = board_tensor
-                            board_tensor_inverted[1:11]= board_tensor[11:21]
-                            board_tensor_inverted[11:21]= board_tensor[1:11]
-                            loss[1], target_score[1], predicted_score[1]  = player0_agent.train_step(board_tensor, reward_cumul[1], 1)
+                            board_tensor_inverted = swap_halves_tensor(board_tensor)                            
+                            loss[1], target_score[1], predicted_score[1]  = player0_agent.train_step(board_tensor_inverted, reward_cumul[1], 1)
             losses.append(loss)
             target_scores.append(target_score)
             predicted_scores.append(predicted_score)
@@ -260,5 +262,5 @@ if __name__ == '__main__':
             p1="score_max_own",
             do_train=True,
             do_save=False, # so we can tune learning rate and weights without messing up the model
-            game_idx=0 # set no >0 to use settings from training plan
+            game_idx=1 # set no >0 to use settings from training plan
         )           

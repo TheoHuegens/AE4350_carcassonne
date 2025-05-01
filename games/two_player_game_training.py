@@ -100,7 +100,7 @@ if __name__ == '__main__':
     p1 = "score_max_own"
 
     # train over N games
-    N_games = 10
+    N_games = 100
     score_histories, reward_histories = play_multiple_games(
         N_games=N_games,
         board_size=15,

@@ -11,6 +11,7 @@ from collections import deque
 import seaborn as sns
 import copy
 import scipy.ndimage
+import torch
 # library imports
 from wingedsheep.carcassonne.objects.actions.action import Action
 from wingedsheep.carcassonne.objects.actions.pass_action import PassAction
@@ -437,28 +438,44 @@ def compute_rewards(
 
 def training_plan(game_idx):
     game_gap = 10
+    # max own
     policy_algo_init='score_max_own'
+    policy_algo_init=None # see if it can learn that
     reward_weights =(1.0, 0.0, 0.0, 0.0)
+    gamma=0.0
+    # max gap
+    #policy_algo_init='score_max_gap'
+    #reward_weights =(0.0, 0.0, 1.0, 0.0)
+    #gamma=0.0
+    # max potential own 
+    #policy_algo_init='score_max_potential_own'
+    #reward_weights =(0.01, 0.0, 0.0, 100.0)
+    #gamma = 0.99
+    # max potential gap 
+    #policy_algo_init='score_max_potential_gap'
+    #reward_weights =(0.0, 0.0, 0.01, 100.0)
+    #gamma = 0.99
+
     # w0=score w1=increase w2=gap w3=final turn factor
 
     # step 0: focus on end game rewards
     param_dict={
         'policy_algo_init':policy_algo_init,
-        'epsilon':0.01, # % random moves for exploration
-        'gamma':0.0, # discount rate, high=future rewards matter
+        'epsilon':0.0, # % random moves for exploration
+        'gamma':gamma, # discount rate, high=future rewards matter
         'reward_weights':reward_weights
         # w0=score w1=increase w2=gap w3=final turn factor
     }
     # step 1: focus on end game rewards, increase future rewards
-    """
     if 1*game_gap < game_idx:
         param_dict={
             'policy_algo_init':policy_algo_init,
-            'epsilon':0.1, # % random moves for exploration
-            'gamma':0.95, # discount rate, high=future rewards matter
+            'epsilon':0.0, # % random moves for exploration
+            'gamma':gamma, # discount rate, high=future rewards matter
             'reward_weights':reward_weights
             # w0=score w1=increase w2=gap w3=final turn factor
         }
+    """
     # step 2: stop exploration, increase future rewards
     if 2*game_gap < game_idx:
         param_dict={
@@ -470,3 +487,14 @@ def training_plan(game_idx):
         }
     """
     return param_dict
+
+def swap_halves_tensor(board_tensor):
+    # Assumes board_tensor is 1D and board_tensor[1:] has even length
+    first_elem = board_tensor[0:1]  # keep shape
+    rest = board_tensor[1:]
+
+    half = rest.shape[0] // 2
+    first_half = rest[:half]
+    second_half = rest[half:]
+
+    return torch.cat((first_elem, second_half, first_half), dim=0)

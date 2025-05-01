@@ -1,0 +1,50 @@
+BASELINE
+p0="score_max_own",
+p1="score_max_own",
+[RESULTS] scores: [16, 23]
+
+FUNCTION THROUGH RL-AGENT VS ALGO-AGENT
+p0="RLAgent",
+p1="score_max_own",
+selected_action = agent_score_max_own
+epsilon=1.0
+[RESULTS] scores: [16, 23] => evaluation functions in rl and algo agents are the same
+[LOSS] < 0.0004 / 0.20 => 0.2% error in prediction of reward
+
+RL-AGENT MANUAL NN VS ALGO-AGENT
+p0="RLAgent",
+p1="score_max_own",
+selected_action = agent_score_max_own
+epsilon=0.0
+policy_algo_init='score_max_own'
+[RESULTS] scores: [16, 23] => manual nn and algo agent evalauate the same and choose the same
+
+RL-AGENT trained NN VS ALGO-AGENT
+p0="RLAgent",
+p1="score_max_own",
+selected_action = agent_score_max_own
+epsilon=0.975
+policy_algo_init=None
+N_games = 100
+[RESULTS] scores: [16, 23] => training is not perfect
+[LOSS] < 0.000175 / 0.20 => 0.0875% error in prediction of reward
+
+RL-AGENT trained NN VS ALGO-AGENT
+p0="RLAgent",
+p1="score_max_own",
+selected_action = agent_score_max_own
+epsilon=0.95
+policy_algo_init=None
+N_games = 100
+[RESULTS] scores: [28, 15] => training is not perfect
+[LOSS] < 0.0000085 / 0.20 => 0.0056% error in prediction of reward
+
+RL-AGENT trained NN VS ALGO-AGENT
+p0="RLAgent",
+p1="score_max_own",
+selected_action = agent_score_max_own
+epsilon=0.0
+policy_algo_init=None
+N_games = 100
+[RESULTS] scores: [12, 33] => training is not perfect
+[LOSS] < 0.0000085 / 0.20 => 0.0056% error in prediction of reward

@@ -91,7 +91,7 @@ class RLAgent:
                  name="RLAgent",
                  policy_net=None,
                  epsilon=0.1,
-                 critic_lr=1e-9,
+                 critic_lr=1e-12,
                  save_interval=1,
                  model_path="policy_net.pth",
                  policy_algo_init=None):
@@ -117,6 +117,7 @@ class RLAgent:
         self.epsilon = epsilon
         self.save_interval = save_interval
         
+        self.policy_algo_init = policy_algo_init
         if policy_algo_init is not None:
             with torch.no_grad():
                 # Zero all weights and biases
@@ -133,27 +134,27 @@ class RLAgent:
                 self.policy_net.fc4.weight.zero_()
                 self.policy_net.fc4.bias.zero_()
             
+                
+                player_vector_len = 10
                 if policy_algo_init == 'score_max_own':
                     self.policy_net.fc4.weight[0][1] = 1.0
+                if policy_algo_init == 'score_max_gap':
+                    self.policy_net.fc4.weight[0][1] = 1.0
+                    self.policy_net.fc4.weight[0][1+player_vector_len] = -1.0
                 if policy_algo_init == 'score_max_potential_own':
                     self.policy_net.fc4.weight[0][1] = 1.0 # score
                     self.policy_net.fc4.weight[0][4] = 1.0 # road tiles
                     self.policy_net.fc4.weight[0][7] = 1.0 # city tiles
                     self.policy_net.fc4.weight[0][9] = 8.0 # abbeys
                 if policy_algo_init == 'score_max_potential_gap':
-                    # own
                     self.policy_net.fc4.weight[0][1] = 1.0 # score
                     self.policy_net.fc4.weight[0][4] = 1.0 # road tiles
                     self.policy_net.fc4.weight[0][7] = 1.0 # city tiles
-                    self.policy_net.fc4.weight[0][9] = 1.0 # abbeys
-                    self.policy_net.fc4.weight[0][10] = 1.0 # abbey neighbours
-                    # opponent's
-                    player_vector_len = 10
+                    self.policy_net.fc4.weight[0][9] = 8.0 # abbeys
                     self.policy_net.fc4.weight[0][1+player_vector_len] = -1.0 # score
                     self.policy_net.fc4.weight[0][4+player_vector_len] = -1.0 # road tiles
                     self.policy_net.fc4.weight[0][7+player_vector_len] = -1.0 # city tiles
-                    self.policy_net.fc4.weight[0][9+player_vector_len] = -9.0 # abbeys
-                    self.policy_net.fc4.weight[0][10+player_vector_len] = -1.0 # abbey neighbours
+                    self.policy_net.fc4.weight[0][9+player_vector_len] = -8.0 # abbeys
 
             print(f"[INFO] Policy network re-initialized for {policy_algo_init} mode.")
         
@@ -177,7 +178,7 @@ class RLAgent:
             # RANDOM action
             selected_action = random.choice(valid_actions)
             # BEST HARDCODED action
-            #selected_action = agent_score_max_own(valid_actions,game,player)
+            selected_action = agent_score_max_own(valid_actions,game,player)
             #selected_action = agent_score_potential_max_own(valid_actions,game,player)
             #selected_action = agent_score_potential_delta_own(valid_actions,game,player)
             #selected_action = agent_score_potential_max_gap(valid_actions,game,player)
@@ -202,8 +203,8 @@ class RLAgent:
                 action_board_array_normed = update_board_array(board_array_bitwise,first_action,player,connection_region_dict=subtile_dict,do_norm=False)
                 
                 if isinstance(first_action, TileAction): # try all meeple placements on that tile - hard to see what's good otherwise
-                    #valid_second_actions = game_copy.get_possible_actions() # then look at tile-meeple action pair
                     valid_second_actions = [None] # No secondary action # only look at action itself
+                    #valid_second_actions = game_copy.get_possible_actions() # then look at tile-meeple action pair
                 else:
                     valid_second_actions = [None] # No secondary action
 

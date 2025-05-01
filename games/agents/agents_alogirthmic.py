@@ -89,6 +89,36 @@ class AgentScoreMaxOwn(Agent):
     def learn(self, *args, **kwargs):
         # No learning for a heuristic agent
         pass
+    
+# === MAXIMISE CURRENT SCORE GAP === #
+class AgentScoreMaxGap(Agent):
+    def __init__(self, name="AgentScoreMaxGap"):
+        self.name = name
+
+    def select_action(self, valid_actions, game, player):
+
+        game_nextmove = copy.copy(game)
+        score_history = []
+
+        for action in valid_actions:
+            if action is not None:
+                game_nextmove = copy.copy(game)
+                game_nextmove.step(player, action)
+
+            # Collect game state
+            score_history.append([game_nextmove.state.scores[0], game_nextmove.state.scores[1]])
+
+        # reward is own score
+        action_scores = np.array(score_history)[:,player]-np.array(score_history)[:,player-1]
+
+        # pick the best
+        action = valid_actions[np.argmax(action_scores)]
+        
+        return action
+    
+    def learn(self, *args, **kwargs):
+        # No learning for a heuristic agent
+        pass
 
 # === MAXIMISE OWN SCORE POTENTIAL === #
 class AgentScoreMaxPotentialOwn(Agent):
@@ -116,6 +146,42 @@ class AgentScoreMaxPotentialOwn(Agent):
 
         # reward is own score
         action_scores = np.array(score_history)[:,player]
+
+        # pick the best
+        action = valid_actions[np.argmax(action_scores)]
+        
+        return action
+    
+    def learn(self, *args, **kwargs):
+        # No learning for a heuristic agent
+        pass
+
+# === MAXIMISE SCORE POTENTIAL GAP === #
+class AgentScoreMaxPotentialGap(Agent):
+    def __init__(self, name="AgentScorePotentialMaxGap"):
+        self.name = name
+
+    def select_action(self, valid_actions, game, player):
+
+        game_nextmove = copy.copy(game)
+        score_history = []
+
+        for action in valid_actions:
+            if action is not None:
+                game_nextmove = copy.copy(game)
+                game_nextmove.step(player, action)
+
+            # Collect game state
+            # compare methods to see if array is representative
+            #if player==1: method='object'
+            #else: method='array'
+            method='array'
+            scores = estimate_potential_score(game_nextmove,method=method)
+            #print(f"scores by ARRAY: {estimate_potential_score(game_nextmove,method='array')} OBJECT: {estimate_potential_score(game_nextmove,method='object')}")
+            score_history.append(scores)
+
+        # reward is own score
+        action_scores = np.array(score_history)[:,player]-np.array(score_history)[:,player-1]
 
         # pick the best
         action = valid_actions[np.argmax(action_scores)]
