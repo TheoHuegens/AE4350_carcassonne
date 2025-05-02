@@ -343,18 +343,22 @@ def estimate_potential_score(game,method='array'):
     
     # do it by meeple end-game grab
     # for some reason the copied game still impact all game objects
-    if method=='object':
-        game_endmove = copy.copy(game)
-        PointsCollector.count_final_scores(game_endmove.state)
-        scores=game_endmove.state.scores
+    if method=='object': # this affects the game object?
+        game_copy = copy_game(game)
+        game_state = game_copy.state
+        #game_state = copy.deepcopy(game.state)
+        PointsCollector.count_final_scores(game_state)
+        scores=game_state.scores
     
     # do it via board interpreted form
     elif method=='array':
-        subtile_dict = construct_subtile_dict(do_norm=True)
+        subtile_dict_norm = construct_subtile_dict(do_norm=True)
+        subtile_dict_bitwise = construct_subtile_dict(do_norm=False)
+
         game_state = game.state
         action_game_state = [len(game_state.deck),game_state.scores[0],game_state.meeples[0],game_state.scores[1],game_state.meeples[1]]
-        board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
-        board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict)
+        board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict_norm)
+        board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict_bitwise)
         action_vector_array, action_vector_dict = build_state_vector(action_game_state,board_array_normed,board_array_bitwise)
 
         # layers 1=roads, 2=city, 3=abbeys
@@ -366,7 +370,7 @@ def estimate_potential_score(game,method='array'):
     return scores
 
 def compute_rewards(
-    score_history,
+    score_history,score_history_potential,
     game_finished,
     weights
 ):
@@ -384,109 +388,36 @@ def compute_rewards(
         winner: int 0 or 1 or None (tie)
     """
 
-    w0, w1, w2, w3 = weights
-    turn = len(score_history)
-    max_turn = 144 # for current tile deck
+    end_game, s, s_diff, s_gap, p, p_diff, p_gap = weights
     if game_finished:
-        turn_correction_factor = w3#/(max_turn-turn+1)
-    else:
         turn_correction_factor = 1
+    else:
+        turn_correction_factor = 1/(end_game+1)
 
     if len(score_history) < 2:
         previous_scores = [0, 0]
+        previous_scores_potential = [0,0]
     else:
         previous_scores = score_history[-2]
+        previous_scores_potential = score_history_potential[-2]
+
     current_scores = score_history[-1]
+    current_scores_potential = score_history_potential[-1]
 
     rewards = [0.0, 0.0]
-
-    # Determine winner (only at end)
-    if game_finished:
-        if current_scores[0] > current_scores[1]:
-            winner = 0
-        elif current_scores[1] > current_scores[0]:
-            winner = 1
-        else:
-            winner = None
-    else:
-        winner = None
-
     for player in [0, 1]:
         opponent = 1 - player
         current_score = current_scores[player]
         score_diff = current_scores[player] - previous_scores[player]
         score_gap = current_scores[player] - current_scores[opponent]
+        current_score_potential = current_scores_potential[player]
+        score_diff_potential = current_scores_potential[player] - previous_scores_potential[player]
+        score_gap_potential = current_scores_potential[player] - current_scores_potential[opponent]
 
-        # Win/loss reward
-        """
-        if game_finished:
-            if winner is None:
-                game_result = 0.0
-            elif winner == player:
-                game_result = 1.0
-            else:
-                game_result = -1.0
-        else:
-            game_result = 0.0
-        """
-        game_result = 0.0 # dont use this anymore
-
-        reward = (w0 * current_score) + (w1 * score_diff) + (w2 * score_gap) + (w3 * game_result)
+        reward = (s * current_score) + (s_diff * score_diff) + (s_gap * score_gap) + (p * current_score_potential) + (p_diff * score_diff_potential) + (p_gap * score_gap_potential)
         rewards[player] = reward*turn_correction_factor/100
 
     return rewards
-
-def training_plan(game_idx):
-    game_gap = 10
-    # max own
-    policy_algo_init='score_max_own'
-    policy_algo_init=None # see if it can learn that
-    reward_weights =(1.0, 0.0, 0.0, 0.0)
-    gamma=0.0
-    # max gap
-    #policy_algo_init='score_max_gap'
-    #reward_weights =(0.0, 0.0, 1.0, 0.0)
-    #gamma=0.0
-    # max potential own 
-    #policy_algo_init='score_max_potential_own'
-    #reward_weights =(0.01, 0.0, 0.0, 100.0)
-    #gamma = 0.99
-    # max potential gap 
-    #policy_algo_init='score_max_potential_gap'
-    #reward_weights =(0.0, 0.0, 0.01, 100.0)
-    #gamma = 0.99
-
-    # w0=score w1=increase w2=gap w3=final turn factor
-
-    # step 0: focus on end game rewards
-    param_dict={
-        'policy_algo_init':policy_algo_init,
-        'epsilon':0.0, # % random moves for exploration
-        'gamma':gamma, # discount rate, high=future rewards matter
-        'reward_weights':reward_weights
-        # w0=score w1=increase w2=gap w3=final turn factor
-    }
-    # step 1: focus on end game rewards, increase future rewards
-    if 1*game_gap < game_idx:
-        param_dict={
-            'policy_algo_init':policy_algo_init,
-            'epsilon':0.0, # % random moves for exploration
-            'gamma':gamma, # discount rate, high=future rewards matter
-            'reward_weights':reward_weights
-            # w0=score w1=increase w2=gap w3=final turn factor
-        }
-    """
-    # step 2: stop exploration, increase future rewards
-    if 2*game_gap < game_idx:
-        param_dict={
-            'policy_algo_init':policy_algo_init,
-            'epsilon':0.01, # % random moves for exploration
-            'gamma':0.975, # discount rate, high=future rewards matter
-            'reward_weights':reward_weights
-            # w0=score w1=increase w2=gap w3=final turn factor
-        }
-    """
-    return param_dict
 
 def swap_halves_tensor(board_tensor):
     # Assumes board_tensor is 1D and board_tensor[1:] has even length
@@ -498,3 +429,39 @@ def swap_halves_tensor(board_tensor):
     second_half = rest[half:]
 
     return torch.cat((first_elem, second_half, first_half), dim=0)
+
+def copy_game(original_game):
+    # Start with a shallow copy
+    game_copy = copy.copy(original_game)
+    
+    # Deep copy the components that must be isolated
+    game_copy.state = copy.deepcopy(original_game.state)
+    
+    # Optional: shallow copy or skip GUI elements if present
+    # game_copy.ui = original_game.ui
+
+    return game_copy
+
+def training_plan(game_idx):
+    
+    policy_algo_init='identity' # None, identity, score_max_own, score_max_gap, score_max_potential_own, score_max_potential_gap
+    epsilon=0.0 # % chance of doing random exploration move
+    gamma = 0.0 # future rewards discount rates
+    learning_rate = 1e-5 # 1e-3 to 1e-5
+    end_game=   0.0 # weight to last move and total game result
+    s=          0.0 # current score
+    s_diff=     0.0 # score increase wrt to last turn
+    s_gap=      0.0 # gap to opponent
+    p =         0.9 # potential score
+    p_diff=     0.0 # increase
+    p_gap=      0.1 # gap
+    
+    reward_weights = (end_game,s,s_diff,s_gap,p,p_diff,p_gap)
+    param_dict={
+        'policy_algo_init':policy_algo_init,
+        'epsilon':epsilon, # % random moves for exploration
+        'gamma':gamma, # discount rate, high=future rewards matter
+        'learning_rate':learning_rate,
+        'reward_weights':reward_weights
+    }
+    return param_dict

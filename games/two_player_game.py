@@ -51,11 +51,13 @@ def two_player_game(
     epsilon=param_dict['epsilon']
     gamma=param_dict['gamma']
     reward_weights=param_dict['reward_weights']
+    learning_rate=param_dict['learning_rate']
     
     # make constants and init array
     subtile_dict = construct_subtile_dict(do_norm=True)
     
     score_history = []
+    score_potential_history = []
     rewards_history = []
     board_history = []
     turn_history = []
@@ -76,12 +78,12 @@ def two_player_game(
     
     # choose player agents
     if p0=="RLAgent":
-        if game_idx==0: player0_agent=RLAgent(epsilon = epsilon,policy_algo_init=policy_algo_init)
-        else:           player0_agent=RLAgent(epsilon = epsilon)
+        if game_idx==0: player0_agent=RLAgent(epsilon = epsilon,policy_algo_init=policy_algo_init, learning_rate=0)
+        else:           player0_agent=RLAgent(epsilon = epsilon, learning_rate=learning_rate)
     else:               player0_agent=agent_classes[p0]
     if p1=="RLAgent":
-        if game_idx==0: player1_agent=RLAgent(epsilon = epsilon,policy_algo_init=policy_algo_init)
-        else:           player1_agent=RLAgent(epsilon = epsilon)
+        if game_idx==0: player1_agent=RLAgent(epsilon = epsilon,policy_algo_init=policy_algo_init, learning_rate=learning_rate)
+        else:           player1_agent=RLAgent(epsilon = epsilon, learning_rate=learning_rate)
     else:               player1_agent=agent_classes[p1]
     
     # plotting if required
@@ -89,10 +91,6 @@ def two_player_game(
     0: {"name": p0, "color": "blue"},
     1: {"name": p1, "color": "orange"}
 }
-
-    # plot neural network for this game
-    if do_plot and isinstance(player0_agent, RLAgent):
-        fig_nn,ax_nn = plot_network(player0_agent.policy_net)
 
     # plots later
     if do_plot:
@@ -151,13 +149,15 @@ def two_player_game(
                     writer.grab_frame()
 
             # Record scores
-            #scores = estimate_potential_score(game,method='object')
             scores = game.state.scores
+            scores_potential = estimate_potential_score(game,method='object') # only use the object method here as it needs a deepocy and takes long
+            #scores = game.state.scores
             score_history.append(scores)
+            score_potential_history.append(scores_potential)
 
             # --- Immediate reward computation ---
             rewards = compute_rewards(
-                score_history,
+                score_history,score_potential_history,
                 game_finished=False,
                 weights=reward_weights
             )
@@ -168,7 +168,7 @@ def two_player_game(
 
     # compute final reward based on winner
     if do_train:
-        final_rewards = compute_rewards(score_history, game_finished=True, weights=reward_weights)
+        final_rewards = compute_rewards(score_history,score_potential_history, game_finished=True, weights=reward_weights)
         rewards_history.append(final_rewards)
         board_history.append(board_tensor)
         turn_history.append(0) # never evaluate the end board as all the meeples are removed
@@ -193,7 +193,7 @@ def two_player_game(
             target_score=[0,0]
             predicted_score=[0,0]
 
-            MIN_TURN_EVAL = 0 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
+            MIN_TURN_EVAL = 20 # 2 player x (meeple+tile) actions = 4 'turns' per tile, starting at tile 4 of player = tile 8 of game = turn 40
             if t>MIN_TURN_EVAL:
                 if turn_history[t]==1: # i.e. Meeple turn
                     for player in range(2):
@@ -259,8 +259,8 @@ if __name__ == '__main__':
             max_turn=500,
             do_plot=True,
             p0="RLAgent", # RLAgent
-            p1="score_max_own",
+            p1="score_max_potential_own",
             do_train=True,
             do_save=False, # so we can tune learning rate and weights without messing up the model
             game_idx=1 # set no >0 to use settings from training plan
-        )           
+        )

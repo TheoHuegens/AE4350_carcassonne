@@ -54,13 +54,12 @@ def agent_center(valid_actions,game,player=0):
 
 def agent_score_max_own(valid_actions,game,player=0):
     
-    game_nextmove = copy.copy(game)
+    game_nextmove = copy_game(game)
     score_history = []
 
     for action in valid_actions:
-        if action is not None:
-            game_nextmove = copy.copy(game)
-            game_nextmove.step(player, action)
+        game_nextmove = copy_game(game)
+        game_nextmove.step(player, action)
 
         # Collect game state
         score_history.append([game_nextmove.state.scores[0], game_nextmove.state.scores[1]])
@@ -73,27 +72,42 @@ def agent_score_max_own(valid_actions,game,player=0):
     
     return action
 
-def agent_score_potential_max_own(valid_actions,game,player=0):
+def agent_score_max_gap(valid_actions,game,player=0):
     
-    current_scores = estimate_potential_score(game)
+    game_nextmove = copy_game(game)
     score_history = []
 
     for action in valid_actions:
-        if action is not None:
-            game_nextmove = copy.copy(game)
-            game_nextmove.step(player, action)
+        game_nextmove = copy_game(game)
+        game_nextmove.step(player, action)
 
         # Collect game state
-        scores = estimate_potential_score(game_nextmove)
+        score_history.append([game_nextmove.state.scores[0], game_nextmove.state.scores[1]])
 
+    # reward is own score
+    action_scores = np.array(score_history)[:,player]-np.array(score_history)[:,player-1]
+
+    # pick the best
+    action = valid_actions[np.argmax(action_scores)]
+    
+    return action
+
+
+def agent_score_potential_max_own(valid_actions,game,player=0):
+    
+    score_history = []
+
+    for action in valid_actions:
+        # step action
+        game_nextmove = copy_game(game)
+        game_nextmove.step(player, action)
+
+        # Collect game state
+        scores = estimate_potential_score(game_nextmove,method='array')
         score_history.append(scores)
-    
-    p_me = player
-    p_opp = player+1
-    if p_opp>=game.state.players: p_opp=0
-    
+
     # maximmise own score
-    action_scores = np.array(score_history)[:,p_me]
+    action_scores = np.array(score_history)[:,player]
 
     # pick the best
     action_index = np.argmax(action_scores)
@@ -103,12 +117,12 @@ def agent_score_potential_max_own(valid_actions,game,player=0):
 
 def agent_score_potential_max_gap(valid_actions,game,player=0):
     
-    current_scores = estimate_potential_score(game)
+    current_scores = estimate_potential_score(game,method='array')
     score_history = []
 
     for action in valid_actions:
         if action is not None:
-            game_nextmove = copy.copy(game)
+            game_nextmove = copy_game(game)
             game_nextmove.step(player, action)
 
         # Collect game state
@@ -131,12 +145,12 @@ def agent_score_potential_max_gap(valid_actions,game,player=0):
 
 def agent_score_potential_delta_own(valid_actions,game,player=0):
     
-    current_scores = estimate_potential_score(game)
+    current_scores = estimate_potential_score(game,method='array')
     score_history = []
 
     for action in valid_actions:
         if action is not None:
-            game_nextmove = copy.copy(game)
+            game_nextmove = copy_game(game)
             game_nextmove.step(player, action)
 
         # Collect game state
@@ -159,12 +173,12 @@ def agent_score_potential_delta_own(valid_actions,game,player=0):
 
 def agent_score_potential_delta_gap(valid_actions,game,player=0):
     
-    current_scores = estimate_potential_score(game)
+    current_scores = estimate_potential_score(game,method='array')
     score_history = []
 
     for action in valid_actions:
         if action is not None:
-            game_nextmove = copy.copy(game)
+            game_nextmove = copy_game(game)
             game_nextmove.step(player, action)
 
         # Collect game state
@@ -228,7 +242,7 @@ def agent_user_input(valid_actions, game, player=0):
 
         if action is not None:
             # Simulate the game state after the action
-            game_copy = copy.copy(game)
+            game_copy = copy_game(game)
             game_copy.step(player, action)
 
             # Build and interpret board

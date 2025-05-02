@@ -12,21 +12,20 @@ from two_player_game import *
 do_plot = False
 do_convert = False
 do_norm = True
-board_size = 20
-max_turn = 50
+board_size = 15
+max_turn = 500
 games_per_match = 10
-N_CORES = 1#cpu_count()  # Automatically use the number of CPU cores
+N_CORES = cpu_count()  # Automatically use the number of CPU cores
 
-# dictionary mapping names to Agent **classes**
-agent_classes = {
-    #"random": RandomAgent(),
-    "center": AgentCenter,
-    #"score_max_potential_own": AgentScoreMaxPotentialOwn(),
-    #'human': AgentUserInput(),
-    "RLAgent": RLAgent,
-}
-
-agents_to_test = list(agent_classes.keys())
+agents_to_test = [
+    "random", 
+    #"center",
+    "score_max_own",
+    #"score_max_gap",
+    "score_max_potential_own",
+    #"score_max_potential_gap",
+    "RLAgent"
+]
 
 # === SIMULATE MATCHUPS ===
 
@@ -39,14 +38,18 @@ def run_matchup(args):
     win_counts_matrix = np.zeros((len(agents_to_test), len(agents_to_test)))
     score_gap_matrix = np.zeros((len(agents_to_test), len(agents_to_test)))
 
-    # Instantiate agents
-    p0_agent = agent_classes[p0_name]()
-    p1_agent = agent_classes[p1_name]()
-
     for game_seed in range(games_per_match):
         random.seed(game_seed)
-        score_history = two_player_game(board_size, max_turn, do_convert, False, p0_agent, p1_agent)
-
+        player_labels, score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores, agent0, agent1, state_vector = two_player_game(
+            board_size=board_size,
+            max_turn=max_turn,
+            do_plot=False, # never plot each game if doing many runs
+            p0=p0_name,
+            p1=p1_name,
+            do_save=True,
+            do_train=True,
+            game_idx=game_seed+1# skip 0 since it has special rules
+        )
         final_score = score_history[-1]  # [p0_score, p1_score]
         p0_final, p1_final = final_score[0], final_score[1]
         score_gap_matrix[agents_to_test.index(p0_name), agents_to_test.index(p1_name)] += p0_final - p1_final

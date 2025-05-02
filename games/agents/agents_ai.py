@@ -91,7 +91,7 @@ class RLAgent:
                  name="RLAgent",
                  policy_net=None,
                  epsilon=0.1,
-                 critic_lr=1e-12,
+                 learning_rate=1e-12,
                  save_interval=1,
                  model_path="policy_net.pth",
                  policy_algo_init=None):
@@ -111,7 +111,7 @@ class RLAgent:
         else:
             self.policy_net = policy_net
 
-        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=critic_lr)
+        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=learning_rate)
         self.loss_fn = nn.MSELoss()
         self.model_path = model_path
         self.epsilon = epsilon
@@ -176,10 +176,10 @@ class RLAgent:
         # --- ε-greedy strategy ---
         if random.random() < self.epsilon:
             # RANDOM action
-            selected_action = random.choice(valid_actions)
+            #selected_action = random.choice(valid_actions)
             # BEST HARDCODED action
-            selected_action = agent_score_max_own(valid_actions,game,player)
-            #selected_action = agent_score_potential_max_own(valid_actions,game,player)
+            #selected_action = agent_score_max_own(valid_actions,game,player)
+            selected_action = agent_score_potential_max_own(valid_actions,game,player)
             #selected_action = agent_score_potential_delta_own(valid_actions,game,player)
             #selected_action = agent_score_potential_max_gap(valid_actions,game,player)
             #selected_action = agent_score_potential_delta_gap(valid_actions,game,player)
@@ -187,67 +187,52 @@ class RLAgent:
         # --- argmax(score) policy ---
         else:
             # precompute the tile arrays
-            subtile_dict = construct_subtile_dict(do_norm=True)
+            subtile_dict_norm = construct_subtile_dict(do_norm=True)
+            subtile_dict_bitwise = construct_subtile_dict(do_norm=False)
+
             all_action_boards = []
-            first_action_list = [] # track action associated with this move
+            score_history = [] # for testing
             
             # make action boards
-            board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict)
-            board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict)
+            base_board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict_norm)
+            base_board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict_bitwise)
 
-            for idx, first_action in enumerate(valid_actions):
-                game_copy = copy.copy(game) # needed for .get possible actions
-                game_copy.step(player, first_action)
-                # update action boards
-                action_board_array_bitwise = update_board_array(board_array_normed,first_action,player,connection_region_dict=subtile_dict,do_norm=True)
-                action_board_array_normed = update_board_array(board_array_bitwise,first_action,player,connection_region_dict=subtile_dict,do_norm=False)
+            for action in valid_actions:
+                # try action on board
+                game_copy = copy_game(game) # needed for .get possible actions
+                game_copy.step(player, action)
                 
-                if isinstance(first_action, TileAction): # try all meeple placements on that tile - hard to see what's good otherwise
-                    valid_second_actions = [None] # No secondary action # only look at action itself
-                    #valid_second_actions = game_copy.get_possible_actions() # then look at tile-meeple action pair
-                else:
-                    valid_second_actions = [None] # No secondary action
+                # update action boards
+                game_state = game_copy.state
+                action_game_state = [len(game_state.deck),game_state.scores[0],game_state.meeples[0],game_state.scores[1],game_state.meeples[1]]
+                #board_array_normed = update_board_array(base_board_array_normed,action,player,connection_region_dict=subtile_dict_norm)
+                #board_array_bitwise = update_board_array(base_board_array_bitwise,action,player,connection_region_dict=subtile_dict_bitwise)
+                board_array_normed = build_board_array(game_copy, do_norm=True, connection_region_dict=subtile_dict_norm)
+                board_array_bitwise = build_board_array(game_copy, do_norm=False, connection_region_dict=subtile_dict_bitwise)
 
-                for second_action in valid_second_actions:
-                    if second_action is not None: 
-                        #print('we eval tile-meeple action pair')
-                        # i.e. we did 1=Tile then 2=Meeple
-                        game_copy_copy = copy.copy(game_copy)
-                        game_copy_copy.step(player, second_action)
-                        # update actions board
-                        action_board_array_bitwise = update_board_array(action_board_array_bitwise,second_action,player,connection_region_dict=subtile_dict,do_norm=True)
-                        action_board_array_normed = update_board_array(action_board_array_normed,second_action,player,connection_region_dict=subtile_dict,do_norm=False)
-                        
-                        game_state = game_copy_copy.state
-                        action_game_state = [len(game_state.deck),game_state.scores[0],game_state.meeples[0],game_state.scores[1],game_state.meeples[1]]
-                    # make vector after last action
-                    else:
-                        game_state = game_copy.state
-                        action_game_state = [len(game_state.deck),game_state.scores[0],game_state.meeples[0],game_state.scores[1],game_state.meeples[1]]
-                    # translate to action vector
-                    action_vector_array, action_vector_dict = build_state_vector(action_game_state,action_board_array_normed,action_board_array_bitwise)
+                action_vector_array, action_vector_dict = build_state_vector(action_game_state,board_array_normed,board_array_bitwise)
 
-                    all_action_boards.append(torch.tensor(action_vector_array, dtype=torch.float32))
-                    first_action_list.append(first_action)  # link each board to its tile action
+                # WITH NETWORK
+                all_action_boards.append(torch.tensor(action_vector_array, dtype=torch.float32))
+                # WITH ALGO
+                scores=[0,0]
+                for p in range(2):
+                    scores[p] = action_vector_dict[f"p{p}_score"]+action_vector_dict[f"p{p}_road_tiles"]+action_vector_dict[f"p{p}_city_tiles"]+8*action_vector_dict[f"p{p}_abbeys"]
+                    scores[p]/100
+                score_history.append(scores)
 
-            # create batch
+            # WITH NETWORK
             board_batch = torch.stack(all_action_boards).to(self.device)
             board_batch = torch.nan_to_num(board_batch, nan=0.0)
-            # GREEDY action
             with torch.no_grad():
                 action_scores = self.policy_net(board_batch)
                 action_scores = action_scores.detach().cpu().numpy()
+            # WITH ALGO
+            #action_scores = np.array(score_history)[:,player]
 
-            # Find index of best board
-            best_idx = np.argmax(action_scores)
-            
-            ### === debug === ###
-            #plt.plot(action_scores)
-            #plt.show()
-            #print(f'best action is #{best_idx} with score {action_scores[best_idx]}')
-            
             # From tile_action_list, pick the corresponding tile action
-            selected_action = first_action_list[best_idx]
+            action_index = np.argmax(action_scores)
+            selected_action = valid_actions[action_index]
             
         return selected_action
 

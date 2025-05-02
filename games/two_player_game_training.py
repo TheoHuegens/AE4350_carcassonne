@@ -42,9 +42,9 @@ def play_multiple_games(
 
     for game_idx in range(N_games):
         print(f"\n--- Playing Game {game_idx+1}/{N_games} ---")
-        #random.seed(game_idx) # ensures reproducibility
         random.seed(0) # can look at improvements better but worse for overall training -- testing only --
-        #print(game_idx)
+        random.seed(game_idx) # ensures reproducibility
+
         player_labels, score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores, agent0, agent1, state_vector = two_player_game(
             board_size=board_size,
             max_turn=max_turn,
@@ -97,7 +97,7 @@ def play_multiple_games(
 # Run N games
 if __name__ == '__main__':
     p0 = "RLAgent"
-    p1 = "score_max_own"
+    p1 = "score_max_potential_own"
 
     # train over N games
     N_games = 100

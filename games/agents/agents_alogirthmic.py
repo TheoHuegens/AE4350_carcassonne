@@ -16,6 +16,7 @@ from wingedsheep.carcassonne.objects.actions.meeple_action import MeepleAction
 from helper import *
 from helper_plotting import *
 from agents.agent import Agent
+from actors import *
 
 # === RANDOM === #
 class RandomAgent(Agent):
@@ -67,12 +68,12 @@ class AgentScoreMaxOwn(Agent):
 
     def select_action(self, valid_actions, game, player):
 
-        game_nextmove = copy.copy(game)
+        game_nextmove = copy_game(game)
         score_history = []
 
         for action in valid_actions:
             if action is not None:
-                game_nextmove = copy.copy(game)
+                game_nextmove = copy_game(game)
                 game_nextmove.step(player, action)
 
             # Collect game state
@@ -96,24 +97,7 @@ class AgentScoreMaxGap(Agent):
         self.name = name
 
     def select_action(self, valid_actions, game, player):
-
-        game_nextmove = copy.copy(game)
-        score_history = []
-
-        for action in valid_actions:
-            if action is not None:
-                game_nextmove = copy.copy(game)
-                game_nextmove.step(player, action)
-
-            # Collect game state
-            score_history.append([game_nextmove.state.scores[0], game_nextmove.state.scores[1]])
-
-        # reward is own score
-        action_scores = np.array(score_history)[:,player]-np.array(score_history)[:,player-1]
-
-        # pick the best
-        action = valid_actions[np.argmax(action_scores)]
-        
+        action = agent_score_max_gap(valid_actions,game,player=player)
         return action
     
     def learn(self, *args, **kwargs):
@@ -126,30 +110,7 @@ class AgentScoreMaxPotentialOwn(Agent):
         self.name = name
 
     def select_action(self, valid_actions, game, player):
-
-        game_nextmove = copy.copy(game)
-        score_history = []
-
-        for action in valid_actions:
-            if action is not None:
-                game_nextmove = copy.copy(game)
-                game_nextmove.step(player, action)
-
-            # Collect game state
-            # compare methods to see if array is representative
-            #if player==1: method='object'
-            #else: method='array'
-            method='array'
-            scores = estimate_potential_score(game_nextmove,method=method)
-            #print(f"scores by ARRAY: {estimate_potential_score(game_nextmove,method='array')} OBJECT: {estimate_potential_score(game_nextmove,method='object')}")
-            score_history.append(scores)
-
-        # reward is own score
-        action_scores = np.array(score_history)[:,player]
-
-        # pick the best
-        action = valid_actions[np.argmax(action_scores)]
-        
+        action = agent_score_potential_max_own(valid_actions,game,player=player)
         return action
     
     def learn(self, *args, **kwargs):
@@ -162,30 +123,7 @@ class AgentScoreMaxPotentialGap(Agent):
         self.name = name
 
     def select_action(self, valid_actions, game, player):
-
-        game_nextmove = copy.copy(game)
-        score_history = []
-
-        for action in valid_actions:
-            if action is not None:
-                game_nextmove = copy.copy(game)
-                game_nextmove.step(player, action)
-
-            # Collect game state
-            # compare methods to see if array is representative
-            #if player==1: method='object'
-            #else: method='array'
-            method='array'
-            scores = estimate_potential_score(game_nextmove,method=method)
-            #print(f"scores by ARRAY: {estimate_potential_score(game_nextmove,method='array')} OBJECT: {estimate_potential_score(game_nextmove,method='object')}")
-            score_history.append(scores)
-
-        # reward is own score
-        action_scores = np.array(score_history)[:,player]-np.array(score_history)[:,player-1]
-
-        # pick the best
-        action = valid_actions[np.argmax(action_scores)]
-        
+        action = agent_score_potential_max_gap(valid_actions,game,player=player)
         return action
     
     def learn(self, *args, **kwargs):
@@ -212,7 +150,7 @@ class AgentUserInput(Agent):
             ax = axes[i]
 
             if action is not None:
-                game_copy = copy.copy(game)
+                game_copy = copy_game(game)
                 game_copy.step(player, action)
 
                 board_array = build_board_array(game_copy, do_norm=False)
