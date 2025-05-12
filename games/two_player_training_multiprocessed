@@ -1,109 +1,80 @@
+# two player training multiprocessed
+
 import random
 import numpy as np
 import torch
 import multiprocessing
-import csv
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from agents.agents_ai import RLAgent
 from helper import swap_halves_tensor
-from helper_plotting import plot_network
+from helper_plotting import plot_stats
 from two_player_game import two_player_game
 from helper import training_plan
 
-
 def run_game_for_experience(board_size, max_turn, game_idx, p0='RLAgent', p1='random', output_dir='./output'):
-    os.makedirs(os.path.join(output_dir, 'files'), exist_ok=True)
-    os.makedirs(os.path.join(output_dir, 'fig'), exist_ok=True)
+    """
+    Runs a single game simulation and extracts relevant training data.
+    """
     try:
         result = two_player_game(
             board_size=board_size,
             max_turn=max_turn,
-            do_plot=False,
             p0=p0,
             p1=p1,
-            do_train=False,
+            do_plot=False,
+            do_update_agent=False,
+            do_train=True,
             do_save=False,
             game_idx=game_idx
         )
     except Exception as e:
         print(f"[ERROR] Game {game_idx} failed: {e}")
         return None
-    if result is None or any(x is None for x in result[1:10]):
-        return None
-    return result[9], result[2], result[3], result[1], result[4], result[5], result[6]
-
+    return result
 
 def collect_experiences_parallel(batch_start_idx, N_games, board_size, max_turn, p0='RLAgent', p1='random', output_dir='./output'):
+    """
+    Collects gameplay data in parallel using multiprocessing.
+    """
     args = [(board_size, max_turn, batch_start_idx + i, p0, p1, output_dir) for i in range(N_games)]
     ctx = multiprocessing.get_context('spawn')
     with ctx.Pool() as pool:
         results = pool.starmap(run_game_for_experience, args)
     return [r for r in results if r is not None]
 
-
-def append_training_metrics(game_idx, metrics, output_file):
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    header = ['game_idx', 'turn', 'score0', 'score1', 'reward0', 'reward1',
-              'cumul_reward0', 'cumul_reward1', 'loss0', 'loss1', 'target0',
-              'target1', 'pred0', 'pred1']
-    write_header = not os.path.exists(output_file)
-    with open(output_file, mode='a', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        if write_header:
-            writer.writerow(header)
-        score_history, rewards_history, rewards_cumul_history, losses, target_scores, predicted_scores = metrics
-        for t in range(len(score_history)):
-            row = [
-                game_idx,
-                t,
-                score_history[t][0], score_history[t][1],
-                rewards_history[t][0], rewards_history[t][1],
-                rewards_cumul_history[t][0], rewards_cumul_history[t][1],
-                losses[t][0], losses[t][1],
-                target_scores[t][0], target_scores[t][1],
-                predicted_scores[t][0], predicted_scores[t][1]
-            ]
-            writer.writerow(row)
-        file.flush()
-        os.fsync(file.fileno())
-
-
-def plot_training_progress_from_csv(output_dir='./output'):
-    csv_file = os.path.join(output_dir, 'files', 'training_metrics.csv')
-    if not os.path.exists(csv_file) or os.path.getsize(csv_file) == 0:
-        print(f"[Warning] No data found in {csv_file}. Skipping plot.")
-        return
-    df = pd.read_csv(csv_file)
-    grouped = df.groupby('game_idx')
-    avg_scores = grouped[['score0', 'score1']].last()
-    avg_scores.plot(title='Final Scores Per Game')
-    plt.xlabel('Game Index')
-    plt.ylabel('Score')
-    plt.grid(True)
-    os.makedirs(os.path.join(output_dir, 'fig'), exist_ok=True)
-    plt.savefig(os.path.join(output_dir, 'fig', 'training_progress.png'))
-    plt.close()
-
-
-def save_network_snapshot(policy_net, game_idx, step_idx, output_dir='./output'):
-    os.makedirs(os.path.join(output_dir, 'files'), exist_ok=True)
-    os.makedirs(os.path.join(output_dir, 'fig'), exist_ok=True)
-    filename = os.path.join(output_dir, 'files', f'policy_net_game{game_idx}_step{step_idx}.pt')
-    torch.save(policy_net.state_dict(), filename)
-    fig_nn, ax_nn = plot_network(policy_net, input_data=None, game_idx=f"g{game_idx}_s{step_idx}")
-    fig_nn.savefig(os.path.join(output_dir, 'fig', f'network_game{game_idx}_step{step_idx}.png'))
-    plt.close(fig_nn)
-
-
 def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random', N_CORES=4, output_dir='./output'):
+    # Clean output directory
+    files_dir = os.path.join(output_dir, 'files')
+    figs_dir = os.path.join(output_dir, 'fig')
+    if os.path.exists(files_dir):
+        for file in os.listdir(files_dir):
+            os.remove(os.path.join(files_dir, file))
+    if os.path.exists(figs_dir):
+        for file in os.listdir(figs_dir):
+            os.remove(os.path.join(figs_dir, file))
+    """
+    Runs centralized training for multiple games, computes discounted rewards,
+    trains the RL agent, and plots summary statistics.
+    """
     param_dict = training_plan(0)
     gamma = param_dict['gamma']
     epsilon = param_dict['epsilon']
     lr = param_dict['learning_rate']
 
     agent = RLAgent(epsilon=epsilon, learning_rate=lr)
+
+    results = {
+        "final_scores": [],
+        "final_cumulative_rewards": [],
+        "losses": []
+    }
+    
+    score_arr = []
+    cumul_arr = []
+    losse_arr = []
+
     game_idx = 0
 
     while game_idx < N_games:
@@ -117,11 +88,28 @@ def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random
             actual_game_idx = game_idx + batch_idx
             print(f"[INFO] Training on game {actual_game_idx} (core {batch_idx+1}/{len(game_data_batch)})")
 
-            board_history, reward_history, _, score_history, losses, target_scores, predicted_scores = data
-            if board_history is None:
+            # Unpack tuple to dictionary with keys
+            data = {
+                "player_labels": data[0],
+                "score_history": data[1],
+                "rewards_history": data[2],
+                "rewards_cumul_history": data[3],
+                "A": data[4],
+                "B": data[5],
+                "C": data[6],
+                "player0_agent": data[7],
+                "player1_agent": data[8],
+                "action_vector_dict": data[9]
+            }
+
+            if data is None or data["action_vector_dict"] is None:
                 continue
 
-            T = len(board_history)
+            action_vector_dict = data["action_vector_dict"]
+            reward_history = data["rewards_history"]
+            score_history = data["score_history"]
+
+            T = len(action_vector_dict)
             rewards_cumul = [0, 0]
             cumul_hist = []
 
@@ -131,31 +119,43 @@ def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random
                 cumul_hist.insert(0, rewards_cumul.copy())
 
             loss_hist = []
-            target_hist = []
-            pred_hist = []
-
             for t in range(T):
-                board_tensor = board_history[t]
+                board_tensor = action_vector_dict[t]
                 reward_cumul = cumul_hist[t]
-                loss0, target0, pred0 = agent.train_step(board_tensor, reward_cumul[0], 0)
+                loss0, _, _ = agent.train_step(board_tensor, reward_cumul[0], 0)
                 board_tensor_inverted = swap_halves_tensor(board_tensor)
-                loss1, target1, pred1 = agent.train_step(board_tensor_inverted, reward_cumul[1], 1)
+                loss1, _, _ = agent.train_step(board_tensor_inverted, reward_cumul[1], 1)
                 loss_hist.append([loss0, loss1])
-                target_hist.append([target0, target1])
-                pred_hist.append([pred0, pred1])
 
-                save_network_snapshot(agent.policy_net, actual_game_idx, t, output_dir)
+            results["final_scores"].append(score_history[-1])
+            results["final_cumulative_rewards"].append(cumul_hist[-1])
+            results["losses"].append(np.mean(loss_hist, axis=0))
 
-            metrics = (score_history, reward_history, cumul_hist, loss_hist, target_hist, pred_hist)
-            output_file = os.path.join(output_dir, 'files', 'training_metrics.csv')
-            append_training_metrics(actual_game_idx, metrics, output_file)
+            # Append this episode's data to CSV as full record
+            #os.makedirs(os.path.join(output_dir, 'files'), exist_ok=True)
+            #csv_path = os.path.join(output_dir, 'files', 'training_metrics_full.csv')
+            #with open(csv_path, 'a') as f:
+            #    f.write(f"game_idx={actual_game_idx},")
+            #    f.write(f"scores={score_history},")
+            #    f.write(f"cumul_rewards={cumul_hist},")
+            #    f.write(f"losses={loss_hist}")  # full loss history
+            
+            score_arr.append([score_history[-1]])
+            cumul_arr.append([cumul_hist[-1]])
+            losse_arr.append(loss_hist) 
+        
+        labels = data["player_labels"]
+        plot_stats(output_dir, labels, score_arr, 'Final Scores Per Game', 'Score', 'final_scores_stats.png')
+        plot_stats(output_dir, labels, cumul_arr, 'Final Cumulative Rewards Per Game', 'Cumulative Reward', 'final_cumul_rewards_stats.png')
+        plot_stats(output_dir, labels, losse_arr, 'Average Losses Per Game', 'Loss', 'losses_stats.png')
 
+        agent.save_model()  # Save model after every episode batch
         game_idx += batch_size
         print(f"[INFO] Completed {game_idx}/{N_games} games ({(game_idx/N_games)*100:.1f}%)")
+            
+    agent.save_model()  # Final model save
 
-    agent.save_model()
-    plot_training_progress_from_csv(output_dir)
-
+    # Re-load simplified CSV for consistency
 
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
@@ -163,7 +163,7 @@ if __name__ == '__main__':
     np.random.seed(0)
 
     centralized_training(
-        N_games=1,
+        N_games=64,
         board_size=15,
         max_turn=500,
         p0='RLAgent',

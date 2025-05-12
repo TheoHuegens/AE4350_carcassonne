@@ -446,15 +446,15 @@ def training_plan(game_idx):
     
     policy_algo_init='identity' # None, identity, score_max_own, score_max_gap, score_max_potential_own, score_max_potential_gap
     epsilon=0.0 # % chance of doing random exploration move
-    gamma = 0.0 # future rewards discount rates
-    learning_rate = 0#1e-5 # 1e-3 to 1e-5
-    end_game=   0.0 # weight to last move and total game result
-    s=          0.0 # current score
+    gamma = 0.925 # future rewards discount rates
+    learning_rate = 1e-4 # 1e-3 to 1e-5
+    end_game=   15.0 # weight to last move and total game result
+    s=          0.5 # current score
     s_diff=     0.0 # score increase wrt to last turn
     s_gap=      0.0 # gap to opponent
-    p =         0.9 # potential score
+    p =         0.5 # potential score
     p_diff=     0.0 # increase
-    p_gap=      0.1 # gap
+    p_gap=      0.0 # gap
     
     reward_weights = (end_game,s,s_diff,s_gap,p,p_diff,p_gap)
     param_dict={
