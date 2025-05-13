@@ -443,17 +443,19 @@ def plot_stats(output_dir, labels, data_arr, title, ylabel, filename):
     """
     #print(data_arr)
     data_arr = np.stack(data_arr)
-    print(data_arr.shape)
-    median = np.median(data_arr, axis=1)
-    q25 = np.percentile(data_arr, 25, axis=1)
-    q75 = np.percentile(data_arr, 75, axis=1)
-    episodes = range(data_arr.shape[0])
+    #print(data_arr.shape)
+    #median = np.median(data_arr, axis=1)
+    #q25 = np.percentile(data_arr, 25, axis=1)
+    #q75 = np.percentile(data_arr, 75, axis=1)
+    #episodes = range(data_arr.shape[0])
     
     plt.figure()
     for p in range(2):
         name = labels[p]['name']
-        plt.plot(median[:,p], label=f"{name} (Median)", color=labels[p]["color"])
-        plt.fill_between(episodes, q25[:,p], q75[:,p], color=labels[p]["color"], alpha=0.2, label='25th-75th percentile')
+        #print(data_arr[:,p])
+        plt.plot(data_arr[:,p], label=f"{name} (Median)", color=labels[p]["color"])
+        #plt.plot(median[:,p], label=f"{name} (Median)", color=labels[p]["color"])
+        #plt.fill_between(episodes, q25[:,p], q75[:,p], color=labels[p]["color"], alpha=0.2, label='25th-75th percentile')
     plt.title(title)
     plt.xlabel('Episode')
     plt.ylabel(ylabel)

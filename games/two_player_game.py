@@ -261,7 +261,7 @@ if __name__ == '__main__':
             board_size=15,
             max_turn=500,
             p0="RLAgent", # RLAgent
-            p1="score_max_potential_own",
+            p1="RLAgent",
             do_plot=True,
             do_train=True,
             do_update_agent=True,

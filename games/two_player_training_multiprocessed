@@ -44,7 +44,7 @@ def collect_experiences_parallel(batch_start_idx, N_games, board_size, max_turn,
         results = pool.starmap(run_game_for_experience, args)
     return [r for r in results if r is not None]
 
-def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random', N_CORES=4, output_dir='./output'):
+def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random', N_CORES=4, output_dir='./output',start_from_scratch=True):
     # Clean output directory
     files_dir = os.path.join(output_dir, 'files')
     figs_dir = os.path.join(output_dir, 'fig')
@@ -70,12 +70,9 @@ def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random
         "final_cumulative_rewards": [],
         "losses": []
     }
-    
-    score_arr = []
-    cumul_arr = []
-    losse_arr = []
 
     game_idx = 0
+    if not start_from_scratch: game_idx += 1
 
     while game_idx < N_games:
         remaining_games = N_games - game_idx
@@ -131,23 +128,10 @@ def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random
             results["final_cumulative_rewards"].append(cumul_hist[-1])
             results["losses"].append(np.mean(loss_hist, axis=0))
 
-            # Append this episode's data to CSV as full record
-            #os.makedirs(os.path.join(output_dir, 'files'), exist_ok=True)
-            #csv_path = os.path.join(output_dir, 'files', 'training_metrics_full.csv')
-            #with open(csv_path, 'a') as f:
-            #    f.write(f"game_idx={actual_game_idx},")
-            #    f.write(f"scores={score_history},")
-            #    f.write(f"cumul_rewards={cumul_hist},")
-            #    f.write(f"losses={loss_hist}")  # full loss history
-            
-            score_arr.append([score_history[-1]])
-            cumul_arr.append([cumul_hist[-1]])
-            losse_arr.append(loss_hist) 
-        
         labels = data["player_labels"]
-        plot_stats(output_dir, labels, score_arr, 'Final Scores Per Game', 'Score', 'final_scores_stats.png')
-        plot_stats(output_dir, labels, cumul_arr, 'Final Cumulative Rewards Per Game', 'Cumulative Reward', 'final_cumul_rewards_stats.png')
-        plot_stats(output_dir, labels, losse_arr, 'Average Losses Per Game', 'Loss', 'losses_stats.png')
+        plot_stats(output_dir, labels, results["final_scores"], 'Final Scores Per Game', 'Score', 'final_scores_stats.png')
+        plot_stats(output_dir, labels, results["final_cumulative_rewards"], 'Final Cumulative Rewards Per Game', 'Cumulative Reward', 'final_cumul_rewards_stats.png')
+        plot_stats(output_dir, labels, results["losses"], 'Average Losses Per Game', 'Loss', 'losses_stats.png')
 
         agent.save_model()  # Save model after every episode batch
         game_idx += batch_size
@@ -163,11 +147,12 @@ if __name__ == '__main__':
     np.random.seed(0)
 
     centralized_training(
-        N_games=64,
+        N_games=768,
         board_size=15,
         max_turn=500,
         p0='RLAgent',
-        p1='score_max_potential_own',
-        N_CORES=4,
-        output_dir='./output'
+        p1='RLAgent',
+        N_CORES=12,
+        output_dir='./output',
+        start_from_scratch=False
     )
