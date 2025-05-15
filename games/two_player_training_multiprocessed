@@ -147,12 +147,12 @@ if __name__ == '__main__':
     np.random.seed(0)
 
     centralized_training(
-        N_games=768,
+        N_games=160,
         board_size=15,
         max_turn=500,
         p0='RLAgent',
-        p1='RLAgent',
-        N_CORES=12,
+        p1='center',
+        N_CORES=8,
         output_dir='./output',
-        start_from_scratch=False
+        start_from_scratch=True
     )

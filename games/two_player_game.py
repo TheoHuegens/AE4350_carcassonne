@@ -266,5 +266,5 @@ if __name__ == '__main__':
             do_train=True,
             do_update_agent=True,
             do_save=False, # so we can tune learning rate and weights without messing up the model
-            game_idx=1 # set no >0 to use settings from training plan
+            game_idx=0 # set no >0 to use settings from training plan
         )

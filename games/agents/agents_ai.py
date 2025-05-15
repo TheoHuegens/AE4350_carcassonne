@@ -191,11 +191,11 @@ class RLAgent:
             subtile_dict_bitwise = construct_subtile_dict(do_norm=False)
 
             all_action_boards = []
-            score_history = [] # for testing
+            #score_history = [] # for testing
             
             # make action boards
-            base_board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict_norm)
-            base_board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict_bitwise)
+            #base_board_array_normed = build_board_array(game, do_norm=True, connection_region_dict=subtile_dict_norm)
+            #base_board_array_bitwise = build_board_array(game, do_norm=False, connection_region_dict=subtile_dict_bitwise)
 
             for action in valid_actions:
                 # try action on board
@@ -213,13 +213,18 @@ class RLAgent:
                 action_vector_array, action_vector_dict = build_state_vector(action_game_state,board_array_normed,board_array_bitwise)
 
                 # WITH NETWORK
-                all_action_boards.append(torch.tensor(action_vector_array, dtype=torch.float32))
+                board_tensor = torch.tensor(action_vector_array, dtype=torch.float32)
+                board_tensor = torch.nan_to_num(board_tensor, nan=0.0)
+                if player == 1:
+                    board_tensor = swap_halves_tensor(board_tensor)
+                all_action_boards.append(board_tensor)
+                
                 # WITH ALGO
-                scores=[0,0]
-                for p in range(2):
-                    scores[p] = action_vector_dict[f"p{p}_score"]+action_vector_dict[f"p{p}_road_tiles"]+action_vector_dict[f"p{p}_city_tiles"]+8*action_vector_dict[f"p{p}_abbeys"]
-                    scores[p]/100
-                score_history.append(scores)
+                #scores=[0,0]
+                #for p in range(2):
+                #    scores[p] = action_vector_dict[f"p{p}_score"]+action_vector_dict[f"p{p}_road_tiles"]+action_vector_dict[f"p{p}_city_tiles"]+8*action_vector_dict[f"p{p}_abbeys"]
+                #    scores[p]/100
+                #score_history.append(scores)
 
             # WITH NETWORK
             board_batch = torch.stack(all_action_boards).to(self.device)
@@ -227,6 +232,7 @@ class RLAgent:
             with torch.no_grad():
                 action_scores = self.policy_net(board_batch)
                 action_scores = action_scores.detach().cpu().numpy()
+            
             # WITH ALGO
             #action_scores = np.array(score_history)[:,player]
 
