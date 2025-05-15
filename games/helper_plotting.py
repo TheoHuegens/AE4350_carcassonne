@@ -14,7 +14,8 @@ import torch
 import torch.nn as nn
 import os
 import pandas as pd
-import ast
+from scipy.ndimage import uniform_filter1d
+#from sklearn.linear_model import LinearRegression
 
 from wingedsheep.carcassonne.utils.points_collector import *
 
@@ -437,30 +438,37 @@ def plot_network(model, input_data=None, output_label="t",
     plt.tight_layout()
     return fig, ax
 
-def plot_stats(output_dir, labels, data_arr, title, ylabel, filename):
-    """
-    Plots the median line with a shaded confidence interval (25th–75th percentile).
-    """
-    #print(data_arr)
+def plot_stats(output_dir, labels, data_arr, title, ylabel, filename, N_CORES=4):
     data_arr = np.stack(data_arr)
-    #print(data_arr.shape)
-    #median = np.median(data_arr, axis=1)
-    #q25 = np.percentile(data_arr, 25, axis=1)
-    #q75 = np.percentile(data_arr, 75, axis=1)
-    #episodes = range(data_arr.shape[0])
+    episodes = np.arange(data_arr.shape[0])
     
     plt.figure()
+
     for p in range(2):
         name = labels[p]['name']
-        #print(data_arr[:,p])
-        plt.plot(data_arr[:,p], label=f"{name} (Median)", color=labels[p]["color"])
-        #plt.plot(median[:,p], label=f"{name} (Median)", color=labels[p]["color"])
-        #plt.fill_between(episodes, q25[:,p], q75[:,p], color=labels[p]["color"], alpha=0.2, label='25th-75th percentile')
+        color = labels[p]["color"]
+
+        # Scatter plot of raw data
+        plt.scatter(episodes, data_arr[:, p], label=f"{name} (Raw)", color=color, alpha=0.3)
+
+        # Moving average
+        mov_avg = uniform_filter1d(data_arr[:, p], size=N_CORES)
+        plt.plot(episodes, mov_avg, label=f"{name} (Moving Avg)", color=color, linestyle='--')
+
+    # Linear regression for player 0
+    #x = episodes.reshape(-1, 1)
+    #y0 = data_arr[:, 0]
+    #linreg = LinearRegression().fit(x, y0)
+    #y_pred = linreg.predict(x)
+    #plt.plot(episodes, y_pred, color="black", linestyle=':', label=f"{labels[0]['name']} (Linear Fit, m={linreg.coef_[0]:.2f})")
+
+    # Final touches
     plt.title(title)
     plt.xlabel('Episode')
     plt.ylabel(ylabel)
+    if ylabel.lower() == 'loss':
+        plt.yscale('log')    
     plt.legend()
-    #plt.grid(True)
     os.makedirs(os.path.join(output_dir, 'fig'), exist_ok=True)
     plt.savefig(os.path.join(output_dir, 'fig', filename))
     plt.close()

@@ -68,6 +68,7 @@ def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random
     results = {
         "final_scores": [],
         "final_cumulative_rewards": [],
+        "total_cumulative_rewards": [],
         "losses": []
     }
 
@@ -114,9 +115,14 @@ def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random
                 rewards_cumul[0] = reward_history[t][0] + gamma * rewards_cumul[0]
                 rewards_cumul[1] = reward_history[t][1] + gamma * rewards_cumul[1]
                 cumul_hist.insert(0, rewards_cumul.copy())
-
             loss_hist = []
-            for t in range(T):
+            
+            # create a list of indices and shuffle it
+            shuffled_indices = list(range(T))
+            random.shuffle(shuffled_indices)
+
+            # train using the shuffled index order
+            for t in shuffled_indices:                
                 board_tensor = action_vector_dict[t]
                 reward_cumul = cumul_hist[t]
                 loss0, _, _ = agent.train_step(board_tensor, reward_cumul[0], 0)
@@ -126,12 +132,14 @@ def centralized_training(N_games, board_size, max_turn, p0='RLAgent', p1='random
 
             results["final_scores"].append(score_history[-1])
             results["final_cumulative_rewards"].append(cumul_hist[-1])
-            results["losses"].append(np.mean(loss_hist, axis=0))
+            results["total_cumulative_rewards"].append(np.sum(cumul_hist,axis=0))
+            results["losses"].append(np.sum(loss_hist, axis=0))
 
         labels = data["player_labels"]
-        plot_stats(output_dir, labels, results["final_scores"], 'Final Scores Per Game', 'Score', 'final_scores_stats.png')
-        plot_stats(output_dir, labels, results["final_cumulative_rewards"], 'Final Cumulative Rewards Per Game', 'Cumulative Reward', 'final_cumul_rewards_stats.png')
-        plot_stats(output_dir, labels, results["losses"], 'Average Losses Per Game', 'Loss', 'losses_stats.png')
+        plot_stats(output_dir, labels, results["final_scores"], 'Final Scores Per Game', 'Score', 'final_scores_stats.png',N_CORES=N_CORES)
+        plot_stats(output_dir, labels, results["final_cumulative_rewards"], 'Final Cumulative Rewards Per Game', 'Cumulative Reward', 'final_cumul_rewards_stats.png',N_CORES=N_CORES)
+        plot_stats(output_dir, labels, results["total_cumulative_rewards"], 'Total Cumulative Rewards Per Game', 'Cumulative Reward', 'total_cumul_rewards_stats.png',N_CORES=N_CORES)
+        plot_stats(output_dir, labels, results["losses"], 'Total Losses Per Game', 'Loss', 'losses_stats.png',N_CORES=N_CORES)
 
         agent.save_model()  # Save model after every episode batch
         game_idx += batch_size
@@ -147,12 +155,12 @@ if __name__ == '__main__':
     np.random.seed(0)
 
     centralized_training(
-        N_games=160,
+        N_games=1024,
         board_size=15,
         max_turn=500,
         p0='RLAgent',
-        p1='center',
+        p1='score_max_own',
         N_CORES=8,
         output_dir='./output',
-        start_from_scratch=True
+        start_from_scratch=False
     )

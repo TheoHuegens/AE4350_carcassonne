@@ -444,10 +444,11 @@ def copy_game(original_game):
 
 def training_plan(game_idx):
     
+    # base training policy
     policy_algo_init='identity' # None, identity, score_max_own, score_max_gap, score_max_potential_own, score_max_potential_gap
-    epsilon=0.05 # % chance of doing random exploration move
+    epsilon=0.0 # % chance of doing random exploration move
     gamma = 0.95 # future rewards discount rates
-    learning_rate = 1e-5 # 1e-3 to 1e-5
+    learning_rate = 1e-6 # 1e-3 to 1e-5
     end_game=   25.0 # weight to last move and total game result
     s=          0.4 # current score
     s_diff=     0.2 # score increase wrt to last turn
@@ -462,6 +463,22 @@ def training_plan(game_idx):
         'epsilon':epsilon, # % random moves for exploration
         'gamma':gamma, # discount rate, high=future rewards matter
         'learning_rate':learning_rate,
-        'reward_weights':reward_weights
+        'reward_weights':reward_weights,
+        'opponent': None
     }
+    
+    # change opponent difficulty with time:
+    if True: # toggle this
+        if game_idx<64:
+            param_dict['opponent']='score_max_own'
+        elif game_idx<256:
+            param_dict['opponent']='score_max_potential_own'
+        elif game_idx<1024:
+            param_dict['opponent']='score_max_potential_gap'
+
+    # exception to inspect current state
+    if game_idx==1:
+        param_dict['epsilon']=0
+        param_dict['learning_rate']=0
+        
     return param_dict

@@ -53,6 +53,8 @@ def two_player_game(
     gamma=param_dict['gamma']
     reward_weights=param_dict['reward_weights']
     learning_rate=param_dict['learning_rate']
+    if param_dict['opponent'] is not None:
+        p1 = param_dict['opponent']
     
     # make constants and init array
     subtile_dict = construct_subtile_dict(do_norm=True)
@@ -261,10 +263,10 @@ if __name__ == '__main__':
             board_size=15,
             max_turn=500,
             p0="RLAgent", # RLAgent
-            p1="RLAgent",
+            p1="center",
             do_plot=True,
             do_train=True,
             do_update_agent=True,
             do_save=False, # so we can tune learning rate and weights without messing up the model
-            game_idx=0 # set no >0 to use settings from training plan
+            game_idx=1 # set no >0 to use settings from training plan
         )
